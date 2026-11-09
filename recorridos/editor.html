@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Recorrido virtual</title>
+<style id="app-css">
+:root{--bg:#0f1012;--panel:#17181b;--line:#2a2c31;--text:#ecebe7;--mute:#9a9893;--accent:#e8b65a;--accent-ink:#1b1406;--danger:#e2705f;--wa:#25d366;--glass:rgba(18,19,22,.62)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+#stage{position:relative;flex:1;min-height:0;overflow:hidden;background:#111214}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#c:active{cursor:grabbing}
+#stage.placing #c{cursor:crosshair}
+.glass{background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#hotspots{position:absolute;inset:0;pointer-events:none}
+.hs{position:absolute;left:0;top:0;pointer-events:auto;border:0;background:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:6px}
+.hs .ring{position:relative;width:52px;height:52px;border-radius:50%;background:rgba(15,16,18,.55);border:2px solid rgba(255,255,255,.92);display:grid;place-items:center;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);box-shadow:0 4px 18px rgba(0,0,0,.35);transition:transform .15s}
+.hs:hover .ring{transform:scale(1.08)}
+.hs .ring::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:2px solid rgba(255,255,255,.6);animation:pulse 2.2s ease-out infinite}
+@keyframes pulse{0%{transform:scale(1);opacity:.8}100%{transform:scale(1.7);opacity:0}}
+.hs.info .ring{width:36px;height:36px;background:rgba(255,255,255,.92);border-color:#fff}
+.hs.info .ring::after{display:none}
+.hs svg{width:22px;height:22px}
+.hs.info svg{width:18px;height:18px}
+.hs .lbl{font-size:13px;font-weight:600;background:rgba(15,16,18,.7);padding:3px 9px;border-radius:999px;white-space:nowrap}
+.hs.sel .ring{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent)}
+#fade{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .28s}
+#fade.on{opacity:1}
+#top{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:8px;padding:12px 12px 26px;background:linear-gradient(rgba(0,0,0,.55),transparent);pointer-events:none;z-index:3}
+#top > *{pointer-events:auto}
+#title{flex:1;font-weight:650;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 6px rgba(0,0,0,.5);pointer-events:none}
+.pill{border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:7px 13px;font-size:14px;font-weight:550;white-space:nowrap}
+.pill.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+#tools{position:absolute;right:12px;top:64px;display:flex;flex-direction:column;gap:8px;z-index:3}
+.ib{width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,.22);display:grid;place-items:center;padding:0}
+.ib svg{width:20px;height:20px}
+.ib.on{background:var(--accent);border-color:var(--accent)}
+.ib.on svg{stroke:var(--accent-ink)}
+#bl{position:absolute;left:12px;bottom:12px;z-index:3;display:flex;gap:8px;align-items:center;max-width:calc(100% - 170px)}
+#roomLabel{font-weight:650;font-size:15px;padding:7px 12px;border-radius:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#btnPhotos{display:flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:6px 10px;font-weight:600;font-size:14px}
+#btnPhotos svg{width:18px;height:18px}
+#hint{position:absolute;left:50%;top:44%;transform:translateX(-50%);z-index:2;font-size:13px;color:#eee;background:rgba(15,16,18,.6);padding:6px 12px;border-radius:999px;transition:opacity .5s;white-space:nowrap;pointer-events:none}
+#hint.gone{opacity:0}
+#placeBanner{position:absolute;left:50%;top:66px;transform:translateX(-50%);z-index:6;background:var(--accent);color:var(--accent-ink);font-weight:650;padding:8px 14px;border-radius:999px;font-size:14px;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
+#roomsMenu{position:absolute;right:62px;top:64px;z-index:7;background:rgba(23,24,27,.97);border:1px solid var(--line);border-radius:14px;padding:6px;min-width:200px;max-height:70%;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+#roomsMenu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:10px}
+#roomsMenu button:hover,#roomsMenu button.cur{background:rgba(255,255,255,.08)}
+#roomsMenu img{width:56px;height:28px;object-fit:cover;border-radius:5px}
+/* minimap */
+#minimap{position:absolute;right:12px;bottom:12px;z-index:4;width:136px;border-radius:12px;padding:5px;border:1px solid rgba(255,255,255,.2);transition:width .25s}
+#minimap.big{width:min(calc(100% - 24px),480px)}
+#app.editing #minimap:not(.big){width:100px}
+.mm-in{position:relative;width:100%;border-radius:8px;overflow:hidden;background:#f3efe7;cursor:pointer}
+.mm-in.grid{background:#20232a;background-image:linear-gradient(rgba(255,255,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.07) 1px,transparent 1px);background-size:16px 16px}
+.mm-in img{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.mm-dot{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#fff;border:3px solid #3b3a37;padding:0;z-index:2}
+.mm-dot.cur{background:var(--accent);border-color:#5a3d06;width:16px;height:16px;margin:-8px 0 0 -8px}
+#minimap.big .mm-dot{width:20px;height:20px;margin:-10px 0 0 -10px}
+.mm-name{position:absolute;transform:translate(-50%,10px);font-size:11px;font-weight:700;color:#2b2a27;background:rgba(255,255,255,.85);padding:1px 6px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:2;display:none}
+#minimap.big .mm-name{display:block}
+.mm-cone{position:absolute;width:90px;height:90px;margin:-45px 0 0 -45px;pointer-events:none;z-index:1}
+#minimap.big .mm-cone{width:150px;height:150px;margin:-75px 0 0 -75px}
+.mm-x{position:absolute;right:8px;top:8px;z-index:3;width:30px;height:30px;border-radius:50%;border:0;background:rgba(20,21,24,.75);display:none}
+#minimap.big .mm-x{display:grid;place-items:center}
+#minimap.placing .mm-in{cursor:crosshair;outline:3px solid var(--accent)}
+/* cards */
+#infoCard{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);z-index:8;width:min(calc(100% - 24px),360px);background:rgba(23,24,27,.97);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+#infoCard h4{margin:0 34px 6px 0;font-size:16px}
+#infoCard p{margin:0;color:#cfcdc8;white-space:pre-wrap}
+.cardx{position:absolute;right:8px;top:8px;width:32px;height:32px;border-radius:50%;border:0;background:#26282d;font-size:16px}
+#gallery{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.94);display:flex;flex-direction:column}
+#gallery .gtop{display:flex;align-items:center;gap:10px;padding:12px 14px}
+#gallery .gtop span{flex:1;color:var(--mute);font-size:14px}
+#gImgWrap{flex:1;min-height:0;display:grid;place-items:center;position:relative;touch-action:pan-y}
+#gImg{max-width:100%;max-height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none}
+#gCap{padding:10px 16px 20px;text-align:center;min-height:52px}
+.gnav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.12);font-size:22px}
+#gPrev{left:10px}#gNext{right:10px}
+#empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;z-index:1}
+#empty h2{margin:0 0 6px;font-size:20px}
+#empty p{margin:0 0 16px;color:var(--mute)}
+/* property sheet */
+.prop-price{font-size:26px;font-weight:750;margin:2px 0}
+.prop-loc{color:var(--mute);margin-bottom:12px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chip{background:#24262b;border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:14px}
+.prop-desc{white-space:pre-wrap;color:#d6d4cf;margin:0 0 14px}
+.wa{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--wa);color:#05230f;font-weight:700;text-decoration:none;border-radius:12px;padding:12px}
+.wa svg{width:20px;height:20px}
+/* editor */
+#editor{flex:0 0 auto;max-height:54dvh;overflow:auto;background:var(--panel);border-top:1px solid var(--line);padding:12px 14px 18px;display:flex;flex-direction:column;gap:14px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+.field{background:#0f1012;border:1px solid var(--line);border-radius:10px;padding:8px 10px;width:100%}
+textarea.field{resize:vertical;min-height:64px}
+.btn{background:#24262b;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:14px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:650}
+.btn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.5}
+#dirty{font-size:12px;color:var(--accent);white-space:nowrap}
+#roomStrip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.rt{flex:0 0 auto;width:116px;background:#0f1012;border:2px solid transparent;border-radius:10px;padding:0;overflow:hidden;text-align:left}
+.rt.cur{border-color:var(--accent)}
+.rt img{display:block;width:100%;height:46px;object-fit:cover}
+.rt span{display:block;padding:4px 7px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt .star{color:var(--accent)}
+.add{flex:0 0 auto;width:116px;min-height:70px;border:2px dashed #3a3c42;border-radius:10px;display:grid;place-items:center;text-align:center;font-size:13px;color:var(--mute);cursor:pointer;padding:6px}
+.add input,.fileBtn input{display:none}
+.fileBtn{cursor:pointer;display:inline-block}
+.lab{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
+.sec{display:flex;flex-direction:column;gap:8px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.hsrow{display:flex;align-items:center;gap:8px;background:#0f1012;border:1px solid var(--line);border-radius:10px;padding:6px 8px}
+.hsrow.infoRow{flex-wrap:wrap}
+.hsrow select{flex:1;background:#17181b;border:1px solid var(--line);border-radius:8px;padding:6px;min-width:0}
+.tag{font-size:11px;font-weight:700;border-radius:6px;padding:2px 6px;background:#2a2c31;color:#cfcdc8;white-space:nowrap}
+.tag.i{background:#e9e6df;color:#26241f}
+.x{background:none;border:0;color:var(--mute);font-size:18px;padding:2px 8px}
+.note{font-size:12.5px;color:var(--mute)}
+.phList{display:flex;flex-direction:column;gap:6px}
+.phRow{display:flex;gap:8px;align-items:center}
+.phRow img{width:64px;height:44px;object-fit:cover;border-radius:6px;flex:0 0 auto}
+details.box{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#141518}
+details.box summary{cursor:pointer;font-weight:650;list-style:none}
+details.box summary::before{content:"▸ ";color:var(--mute)}
+details.box[open] summary::before{content:"▾ "}
+details.box .sec{margin-top:10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(20px);background:#25272c;border:1px solid var(--line);padding:9px 14px;border-radius:12px;font-size:14px;opacity:0;transition:.25s;z-index:60;pointer-events:none;max-width:92vw;text-align:center}
+#toast.on{opacity:1;transform:translateX(-50%)}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:50;padding:16px}
+#modal .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:16px;max-width:520px;width:100%;max-height:85dvh;overflow:auto;padding:18px 18px 14px}
+#modal h3{margin:0 0 10px}
+#modal ol{padding-left:20px;margin:0 0 12px}
+#modal li{margin-bottom:7px}
+[hidden]{display:none!important}
+@media (min-width:900px){
+  #app{flex-direction:row}
+  #editor{max-height:none;width:380px;border-top:0;border-left:1px solid var(--line);order:2}
+  #minimap{width:190px}
+}
+</style>
+<script type="importmap" id="app-importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"}}</script>
+</head>
+<body>
+<template id="app-shell">
+<div id="app">
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="hotspots"></div>
+    <div id="fade"></div>
+    <div id="empty" hidden>
+      <div>
+        <h2>Tu recorrido virtual</h2>
+        <p id="emptyMsg">Este recorrido aún no tiene fotos.</p>
+        <label class="pill primary fileBtn" id="emptyAdd" hidden>Añadir panorámicas<input type="file" accept="image/*" multiple></label>
+      </div>
+    </div>
+    <div id="top">
+      <div id="title"></div>
+      <button class="pill glass" id="btnDetails" hidden>Detalles</button>
+      <button class="pill primary" id="btnEdit" hidden>Editar</button>
+    </div>
+    <div id="tools">
+      <button class="ib glass" id="btnRooms" title="Habitaciones" hidden><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6.5 8 6.5M6 9.5V20h12V9.5M10 20v-5h4v5"/></svg></button>
+      <button class="ib glass" id="btnAuto" title="Recorrido automático" hidden><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"><path d="M8 5.5v13l10.5-6.5z"/></svg></button>
+      <button class="ib glass" id="btnGyro" title="Mirar moviendo el celular" hidden><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M3 9c-1.3 2-1.3 4 0 6M21 9c1.3 2 1.3 4 0 6"/></svg></button>
+      <button class="ib glass" id="btnFull" title="Pantalla completa" hidden><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    </div>
+    <div id="roomsMenu" hidden></div>
+    <div id="placeBanner" hidden></div>
+    <div id="bl">
+      <div id="roomLabel" class="glass"></div>
+      <button id="btnPhotos" class="glass" hidden><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"><path d="M4 7.5h3.2L9 5h6l1.8 2.5H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="photoCount"></span></button>
+    </div>
+    <div id="minimap" class="glass" hidden>
+      <div class="mm-in" id="mmIn"><img id="mmImg" alt="" hidden></div>
+      <button class="mm-x" id="mmClose" title="Cerrar plano"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div id="infoCard" hidden><button class="cardx" id="infoClose">✕</button><h4 id="infoTitle"></h4><p id="infoText"></p></div>
+    <div id="hint">Arrastra para mirar alrededor</div>
+  </div>
+  <section id="editor" hidden>
+    <div class="row">
+      <input class="field grow" id="tourTitle" placeholder="Nombre del recorrido" maxlength="80">
+      <span id="dirty" hidden>● Sin guardar</span>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="btnSave">Guardar</button>
+      <button class="btn" id="btnView">Ver como visitante</button>
+      <button class="btn" id="btnTips">Cómo tomar las fotos</button>
+    </div>
+    <div class="sec">
+      <div class="lab">Habitaciones</div>
+      <div id="roomStrip"></div>
+    </div>
+    <div id="roomPanel" class="sec" hidden>
+      <input class="field" id="roomName" placeholder="Nombre de la habitación" maxlength="40">
+      <div>
+        <div class="row"><span class="lab grow">Ángulo de la panorámica</span><b id="hfovVal"></b></div>
+        <input type="range" id="hfov" min="30" max="360" step="5">
+        <div class="note">Si diste la vuelta completa, ponlo en 360°. Si la foto se ve estirada o aplastada, ajústalo hasta que las paredes se vean rectas.</div>
+      </div>
+      <div class="row">
+        <button class="btn" id="btnStartView">Usar esta vista al entrar</button>
+        <button class="btn" id="btnStartRoom">Empezar aquí</button>
+      </div>
+      <div class="lab" style="margin-top:4px">Puntos de paso y etiquetas</div>
+      <div id="hsList" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div class="row">
+        <button class="btn" id="btnPlace">+ Punto de paso</button>
+        <button class="btn" id="btnPlaceInfo">+ Etiqueta</button>
+      </div>
+      <div class="lab" style="margin-top:4px">Fotos de detalle</div>
+      <div class="phList" id="phList"></div>
+      <div class="row"><label class="btn fileBtn">+ Añadir fotos normales<input type="file" accept="image/*" multiple id="phIn"></label></div>
+      <div class="lab" style="margin-top:4px">En el plano</div>
+      <div class="row">
+        <button class="btn" id="btnPlanPlace">Ubicar en el plano</button>
+        <button class="btn" id="btnPlanRemove" hidden>Quitar del plano</button>
+      </div>
+      <div id="planRotBox" hidden>
+        <div class="row"><span class="lab grow">Dirección en el plano</span><b id="planRotVal"></b></div>
+        <input type="range" id="planRot" min="0" max="355" step="5">
+        <div class="note">Gira hasta que el cono del plano apunte hacia donde miras en la foto.</div>
+      </div>
+      <div class="row" style="margin-top:6px"><span class="grow"></span><button class="btn danger" id="btnDelRoom">Eliminar habitación</button></div>
+    </div>
+    <details class="box" id="planBox">
+      <summary>Plano de la casa</summary>
+      <div class="sec">
+        <div class="note">Sube una foto o dibujo del plano (opcional). Luego, en cada habitación, toca «Ubicar en el plano». Sin imagen, se usa una cuadrícula.</div>
+        <div class="row">
+          <label class="btn fileBtn"><span id="planUpLabel">Subir plano</span><input type="file" accept="image/*" id="planIn"></label>
+          <button class="btn danger" id="btnPlanDel" hidden>Quitar imagen</button>
+        </div>
+      </div>
+    </details>
+    <details class="box" id="propBox">
+      <summary>Ficha de la propiedad</summary>
+      <div class="sec">
+        <div class="note">Se muestra en el botón «Detalles». Deja vacío lo que no quieras mostrar.</div>
+        <input class="field" data-prop="price" placeholder="Precio (ej. $120.000 o ₡65.000.000)">
+        <input class="field" data-prop="location" placeholder="Ubicación">
+        <div class="grid2">
+          <input class="field" data-prop="area" placeholder="Área (ej. 120 m²)">
+          <input class="field" data-prop="lot" placeholder="Lote (ej. 200 m²)">
+          <input class="field" data-prop="bedrooms" placeholder="Habitaciones">
+          <input class="field" data-prop="bathrooms" placeholder="Baños">
+          <input class="field" data-prop="parking" placeholder="Parqueos">
+          <input class="field" data-prop="type" placeholder="Venta / Alquiler">
+        </div>
+        <textarea class="field" data-prop="description" placeholder="Descripción"></textarea>
+        <input class="field" data-prop="contact" placeholder="Nombre de contacto">
+        <input class="field" data-prop="whatsapp" placeholder="WhatsApp con código de país (ej. 506 8888 8888)" inputmode="tel">
+      </div>
+    </details>
+    <div class="row" style="border-top:1px solid var(--line);padding-top:10px">
+      <button class="btn" id="btnDemo" hidden>Quitar ejemplo</button>
+      <button class="btn" id="btnDownload" hidden>Descargar HTML</button>
+      <span class="note grow" id="saveNote"></span>
+    </div>
+  </section>
+</div>
+<div id="gallery" hidden>
+  <div class="gtop"><span id="gCount"></span><button class="cardx" style="position:static" id="gClose">✕</button></div>
+  <div id="gImgWrap"><img id="gImg" alt=""><button class="gnav" id="gPrev">‹</button><button class="gnav" id="gNext">›</button></div>
+  <div id="gCap"></div>
+</div>
+<div id="toast"></div>
+<div id="modal" hidden><div class="card"><button class="cardx" id="modalX">✕</button><div id="modalBody"></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn primary" id="modalClose">Cerrar</button></div></div></div>
+</template>
+<script id="tour-data" type="application/json">{"title": "Recorrido virtual", "rooms": []}</script>
+<script type="module" id="app-js">
+import * as THREE from 'three';
+
+const shellTpl = document.getElementById('app-shell');
+document.body.prepend(shellTpl.content.cloneNode(true));
+const $ = s => document.querySelector(s);
+const rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const uid = () => Math.random().toString(36).slice(2, 10);
+const TAU = Math.PI * 2;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
+
+let state;
+try { state = JSON.parse(document.getElementById('tour-data').textContent); } catch (e) { state = null; }
+if (!state || typeof state !== 'object') state = {};
+state.title = state.title || 'Recorrido virtual';
+state.rooms = Array.isArray(state.rooms) ? state.rooms : [];
+state.property = state.property && typeof state.property === 'object' ? state.property : {};
+state.plan = state.plan && state.plan.src ? state.plan : null;
+for (const r of state.rooms) { r.hotspots = r.hotspots || []; r.photos = r.photos || []; }
+const getRoom = id => state.rooms.find(r => r.id === id);
+
+const caps = { artifact: null, assets: null, downloads: null };
+let canEdit = false, localOnly = false;
+let mode = 'view', curId = null, dirty = false, placing = null, planPlacing = false, selHs = null;
+
+/* ---------- three.js ---------- */
+const canvas = $('#c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111214);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 100);
+camera.rotation.order = 'YXZ';
+const MAXTEX = Math.min(4096, renderer.capabilities.maxTextureSize || 4096);
+const R = 10;
+const view = { yaw: 0, pitch: 0, fov: 70 };
+const lim = { hf: TAU, halfV: 0.6, maxFov: 70 };
+let pano = null, loadToken = 0;
+
+function baseFov() { return camera.aspect < 1 ? lim.maxFov : Math.min(70, lim.maxFov); }
+function resize() {
+  const r = $('#stage').getBoundingClientRect();
+  renderer.setSize(Math.max(1, r.width), Math.max(1, r.height), false);
+  camera.aspect = Math.max(1, r.width) / Math.max(1, r.height);
+  camera.updateProjectionMatrix();
+  clampView();
+}
+new ResizeObserver(resize).observe($('#stage'));
+
+function clampView() {
+  view.fov = clamp(view.fov, 20, lim.maxFov);
+  const vf = rad(view.fov) / 2;
+  const pmax = Math.max(0, lim.halfV - vf);
+  view.pitch = clamp(view.pitch, -pmax, pmax);
+  if (lim.hf < TAU - 1e-3) {
+    const hh = Math.atan(Math.tan(vf) * camera.aspect);
+    const ymax = Math.max(0, lim.hf / 2 - hh);
+    const before = view.yaw;
+    view.yaw = clamp(view.yaw, -ymax, ymax);
+    return before !== view.yaw;
+  }
+  view.yaw = wrapA(view.yaw);
+  return false;
+}
+
+function arcGeom(u0, u1, hf, H) {
+  const seg = Math.max(2, Math.ceil((u1 - u0) * hf / rad(2)));
+  const pos = [], uv = [], idx = [];
+  for (let i = 0; i <= seg; i++) {
+    const u = u0 + (u1 - u0) * i / seg, yaw = -hf / 2 + u * hf;
+    const x = R * Math.sin(yaw), z = -R * Math.cos(yaw), lu = i / seg;
+    pos.push(x, -H / 2, z, x, H / 2, z);
+    uv.push(lu, 0, lu, 1);
+  }
+  for (let i = 0; i < seg; i++) { const a = 2 * i, b = a + 1, c = a + 2, d = a + 3; idx.push(a, c, b, b, c, d); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}
+function buildPano(room, img) {
+  const g = new THREE.Group();
+  const w = img.naturalWidth, h = img.naturalHeight, aspect = w / h;
+  const hf = rad(clamp(room.hfov || 360, 10, 360));
+  const H = R * hf / aspect;
+  const scale = h > MAXTEX ? MAXTEX / h : 1;
+  const srcStrip = Math.floor(MAXTEX / scale);
+  const aniso = renderer.capabilities.getMaxAnisotropy();
+  for (let sx = 0; sx < w; sx += srcStrip) {
+    const sw = Math.min(srcStrip, w - sx);
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(sw * scale)); cv.height = Math.max(1, Math.round(h * scale));
+    cv.getContext('2d').drawImage(img, sx, 0, sw, h, 0, 0, cv.width, cv.height);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = aniso;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    g.add(new THREE.Mesh(arcGeom(sx / w, (sx + sw) / w, hf, H), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })));
+  }
+  return { g, H, hf };
+}
+function disposePano() {
+  if (!pano) return;
+  scene.remove(pano.g);
+  pano.g.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.map && o.material.map.dispose(); o.material.dispose(); } });
+  pano = null;
+}
+const imgCache = new Map();
+function loadImage(src) {
+  if (imgCache.has(src)) return imgCache.get(src);
+  const p = new Promise((res, rej) => { const im = new Image(); im.decoding = 'async'; im.onload = () => res(im); im.onerror = () => rej(new Error('img')); im.src = src; });
+  imgCache.set(src, p); p.catch(() => imgCache.delete(src));
+  return p;
+}
+
+/* ---------- animation ---------- */
+let anim = null;
+const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+function animateTo(to, dur) {
+  return new Promise(res => {
+    if (anim) anim.res();
+    anim = { from: { ...view }, to: { yaw: view.yaw, pitch: view.pitch, fov: view.fov, ...to }, t0: performance.now(), dur, res };
+  });
+}
+function stepAnim(now) {
+  if (!anim) return;
+  const k = clamp((now - anim.t0) / anim.dur, 0, 1), e = ease(k), f = anim.from, t = anim.to;
+  view.yaw = f.yaw + wrapA(t.yaw - f.yaw) * e;
+  view.pitch = f.pitch + (t.pitch - f.pitch) * e;
+  view.fov = f.fov + (t.fov - f.fov) * e;
+  if (k >= 1) { const r = anim.res; anim = null; r(); }
+}
+
+const fade = $('#fade');
+async function showRoom(id, opts = {}) {
+  const room = getRoom(id); if (!room) return;
+  const token = ++loadToken;
+  closeInfo();
+  const doFade = !opts.noFade && !!pano && !fade.classList.contains('on');
+  if (doFade) { fade.classList.add('on'); await sleep(280); }
+  let img;
+  try { img = await loadImage(room.src); } catch (e) { if (token === loadToken) { fade.classList.remove('on'); toast('No se pudo cargar la foto de «' + room.name + '»'); } return; }
+  if (token !== loadToken) return;
+  disposePano();
+  const b = buildPano(room, img);
+  scene.add(b.g);
+  pano = { ...b, room };
+  curId = id;
+  lim.hf = b.hf; lim.halfV = Math.atan(b.H / 2 / R);
+  lim.maxFov = Math.min(90, deg(2 * lim.halfV) * 0.999);
+  anim = null;
+  if (!opts.keepFov) view.fov = baseFov();
+  view.yaw = opts.yaw ?? room.startYaw ?? 0;
+  view.pitch = opts.pitch ?? room.startPitch ?? 0;
+  clampView();
+  if (gyro.on) gyro.needInit = true;
+  renderHotspots(); updateChrome(); renderEditor(); renderMinimap();
+  if (opts.arrive) { const target = view.fov; view.fov = target * 0.72; animateTo({ fov: target }, 650); }
+  fade.classList.remove('on');
+  auto.t = 0;
+  for (const h of room.hotspots) { const r = getRoom(h.to); r && loadImage(r.src).catch(() => {}); }
+}
+let walking = false;
+async function walkTo(targetId, h) {
+  const target = getRoom(targetId); if (!target || walking) return;
+  walking = true;
+  try {
+    if (h) {
+      const p = animateTo({ yaw: h.yaw, pitch: clamp(h.pitch * 0.5, -0.3, 0.3), fov: Math.max(22, view.fov * 0.5) }, 520);
+      setTimeout(() => fade.classList.add('on'), 300);
+      await p; await sleep(60);
+    } else { fade.classList.add('on'); await sleep(280); }
+    await showRoom(target.id, { arrive: true });
+  } finally { walking = false; fade.classList.remove('on'); }
+}
+
+/* ---------- hotspots ---------- */
+const hsLayer = $('#hotspots');
+const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+const INFO_I = '<svg viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2.8" stroke-linecap="round"><path d="M12 11v7M12 6.5v.5"/></svg>';
+let hsEls = [];
+function renderHotspots() {
+  hsLayer.innerHTML = ''; hsEls = [];
+  const room = getRoom(curId); if (!room) return;
+  for (const h of room.hotspots) {
+    const isInfo = h.type === 'info';
+    const el = document.createElement('button');
+    el.className = 'hs' + (isInfo ? ' info' : '') + (mode === 'edit' && selHs === h.id ? ' sel' : '');
+    el.innerHTML = '<span class="ring">' + (isInfo ? INFO_I : ARROW) + '</span><span class="lbl"></span>';
+    const target = isInfo ? null : getRoom(h.to);
+    el.querySelector('.lbl').textContent = isInfo ? (h.title || 'Etiqueta') : (target ? target.name : 'Sin destino');
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      if (placing || planPlacing) return;
+      stopAuto(); hideHint();
+      if (mode === 'edit') { selHs = h.id; renderEditor(); }
+      if (isInfo) { openInfo(h); if (mode === 'edit') renderHotspots(); return; }
+      if (target) walkTo(target.id, h);
+      else if (mode === 'edit') { renderHotspots(); toast('Elige un destino para este punto'); }
+    });
+    hsLayer.appendChild(el);
+    hsEls.push({ el, h, off: isInfo ? 18 : 26 });
+  }
+}
+const tmpV = new THREE.Vector3(), tmpC = new THREE.Vector3();
+function positionHotspots() {
+  const w = canvas.clientWidth, hgt = canvas.clientHeight;
+  for (const { el, h, off } of hsEls) {
+    const cp = Math.cos(h.pitch);
+    tmpV.set(Math.sin(h.yaw) * cp * R, Math.sin(h.pitch) * R, -Math.cos(h.yaw) * cp * R);
+    tmpC.copy(tmpV).applyMatrix4(camera.matrixWorldInverse);
+    if (tmpC.z > -0.5) { el.style.display = 'none'; continue; }
+    tmpV.project(camera);
+    const x = (tmpV.x + 1) / 2 * w, y = (1 - tmpV.y) / 2 * hgt;
+    if (x < -80 || x > w + 80 || y < -80 || y > hgt + 80) { el.style.display = 'none'; continue; }
+    el.style.display = '';
+    el.style.transform = `translate(${x}px,${y}px) translate(-50%,-${off}px)`;
+  }
+}
+function openInfo(h) {
+  $('#infoTitle').textContent = h.title || 'Etiqueta';
+  $('#infoText').textContent = h.text || '';
+  $('#infoCard').hidden = false;
+}
+function closeInfo() { $('#infoCard').hidden = true; }
+$('#infoClose').addEventListener('click', closeInfo);
+
+/* ---------- gyroscope ---------- */
+const gyro = { on: false, got: false, needInit: true, yaw: 0, pitch: 0, offset: 0 };
+const gEuler = new THREE.Euler(), gQ = new THREE.Quaternion(), gQ0 = new THREE.Quaternion(), gQ1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)), gZ = new THREE.Vector3(0, 0, 1), gE2 = new THREE.Euler();
+function onOrient(e) {
+  if (e.alpha == null && e.beta == null) return;
+  const orient = rad((screen.orientation && screen.orientation.angle) || window.orientation || 0);
+  gEuler.set(rad(e.beta || 0), rad(e.alpha || 0), -rad(e.gamma || 0), 'YXZ');
+  gQ.setFromEuler(gEuler); gQ.multiply(gQ1); gQ.multiply(gQ0.setFromAxisAngle(gZ, -orient));
+  gE2.setFromQuaternion(gQ, 'YXZ');
+  gyro.yaw = -gE2.y; gyro.pitch = gE2.x; gyro.got = true;
+  if (gyro.needInit) { gyro.offset = view.yaw - gyro.yaw; gyro.needInit = false; }
+}
+async function setGyro(on) {
+  if (!on) { gyro.on = false; window.removeEventListener('deviceorientation', onOrient); $('#btnGyro').classList.remove('on'); return; }
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== 'granted') throw new Error('denied');
+    }
+  } catch (e) { toast('No se dio permiso para usar el movimiento del celular.', 3500); return; }
+  stopAuto();
+  gyro.on = true; gyro.got = false; gyro.needInit = true;
+  window.addEventListener('deviceorientation', onOrient);
+  $('#btnGyro').classList.add('on');
+  toast('Mueve el celular para mirar alrededor');
+  setTimeout(() => { if (gyro.on && !gyro.got) { setGyro(false); toast('Aquí el navegador no permite usar el movimiento. Funciona en el HTML descargado o publicado en tu web.', 4500); } }, 1800);
+}
+$('#btnGyro').addEventListener('click', () => setGyro(!gyro.on));
+
+/* ---------- auto tour ---------- */
+const auto = { on: false, t: 0, dir: 1 };
+const AUTO_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"><path d="M8 5.5v13l10.5-6.5z"/></svg>';
+const AUTO_PAUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="#1b1406" stroke-width="2.4" stroke-linecap="round"><path d="M9 6v12M15 6v12"/></svg>';
+function startAuto() { if (gyro.on) setGyro(false); auto.on = true; auto.t = 0; auto.dir = 1; const b = $('#btnAuto'); b.classList.add('on'); b.innerHTML = AUTO_PAUSE; hideHint(); closeInfo(); }
+function stopAuto() { if (!auto.on) return; auto.on = false; const b = $('#btnAuto'); b.classList.remove('on'); b.innerHTML = AUTO_PLAY; }
+$('#btnAuto').addEventListener('click', () => auto.on ? stopAuto() : startAuto());
+function stepAuto(dt) {
+  if (!auto.on || anim || walking || !pano) return;
+  view.yaw += auto.dir * 0.2 * dt;
+  if (clampView()) auto.dir *= -1;
+  auto.t += dt;
+  const turnTime = lim.hf >= TAU - 1e-3 ? TAU / 0.2 * 0.85 : 14;
+  if (auto.t > Math.min(turnTime, 26) && state.rooms.length > 1) {
+    auto.t = 0;
+    const i = state.rooms.findIndex(r => r.id === curId);
+    const next = state.rooms[(i + 1) % state.rooms.length];
+    const room = getRoom(curId);
+    const h = room && room.hotspots.find(x => x.to === next.id);
+    walkTo(next.id, h);
+  }
+}
+
+/* ---------- fullscreen ---------- */
+const fsEnabled = !!(document.fullscreenEnabled && document.documentElement.requestFullscreen);
+$('#btnFull').hidden = !fsEnabled;
+$('#btnFull').addEventListener('click', async () => {
+  try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
+  catch (e) { toast('La pantalla completa no está disponible aquí'); }
+});
+document.addEventListener('fullscreenchange', () => $('#btnFull').classList.toggle('on', !!document.fullscreenElement));
+
+/* ---------- controls ---------- */
+const pointers = new Map();
+let drag = null, pinch = null;
+function hideHint() { $('#hint').classList.add('gone'); }
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  $('#roomsMenu').hidden = true;
+  stopAuto(); anim = null;
+  if (pointers.size === 1) drag = { x: e.clientX, y: e.clientY, yaw: view.yaw, pitch: view.pitch, off: gyro.offset, moved: 0, t: performance.now() };
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, fov: view.fov };
+    if (drag) drag.moved = 99;
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size >= 2 && pinch) {
+    const [a, b] = [...pointers.values()];
+    view.fov = pinch.fov * pinch.d / (Math.hypot(a.x - b.x, a.y - b.y) || 1);
+    clampView(); hideHint();
+  } else if (pointers.size === 1 && drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
+    const k = rad(view.fov) / Math.max(1, canvas.clientHeight);
+    if (gyro.on && gyro.got) gyro.offset = drag.off - dx * k;
+    else { view.yaw = drag.yaw - dx * k; view.pitch = drag.pitch + dy * k; clampView(); }
+    if (drag.moved > 6) hideHint();
+  }
+});
+function endPointer(e) {
+  if (!pointers.has(e.pointerId)) return;
+  const wasTap = pointers.size === 1 && drag && drag.moved < 7 && performance.now() - drag.t < 600;
+  pointers.delete(e.pointerId);
+  if (wasTap && e.type === 'pointerup') {
+    if (placing) placeHotspot(e.clientX, e.clientY);
+    else closeInfo();
+  }
+  if (pointers.size < 2) pinch = null;
+  if (pointers.size === 1) { const p = [...pointers.values()][0]; drag = { x: p.x, y: p.y, yaw: view.yaw, pitch: view.pitch, off: gyro.offset, moved: 99, t: 0 }; }
+  if (pointers.size === 0) drag = null;
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('wheel', e => { e.preventDefault(); stopAuto(); view.fov *= 1 + e.deltaY * 0.001; clampView(); }, { passive: false });
+window.addEventListener('keydown', e => {
+  if (!$('#gallery').hidden) {
+    if (e.key === 'ArrowLeft') galStep(-1); else if (e.key === 'ArrowRight') galStep(1); else if (e.key === 'Escape') closeGallery();
+    return;
+  }
+  if (e.key === 'Escape') { closeInfo(); $('#modal').hidden = true; if (placing) setPlacing(null); if (planPlacing) setPlanPlacing(false); return; }
+  if (e.target.closest && e.target.closest('input,select,textarea')) return;
+  const s = rad(4);
+  if (e.key === 'ArrowLeft') view.yaw -= s; else if (e.key === 'ArrowRight') view.yaw += s;
+  else if (e.key === 'ArrowUp') view.pitch += s; else if (e.key === 'ArrowDown') view.pitch -= s; else return;
+  stopAuto(); clampView();
+});
+
+const raycaster = new THREE.Raycaster();
+function placeHotspot(cx, cy) {
+  const room = getRoom(curId); if (!room) return;
+  const r = canvas.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
+  const d = raycaster.ray.direction;
+  const yaw = Math.atan2(d.x, -d.z), pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
+  if (lim.hf < TAU - 1e-3 && Math.abs(yaw) > lim.hf / 2) { toast('Ese punto queda fuera de la foto'); return; }
+  let h;
+  if (placing === 'info') {
+    h = { id: uid(), type: 'info', yaw: +yaw.toFixed(4), pitch: +pitch.toFixed(4), title: 'Nueva etiqueta', text: '' };
+  } else {
+    const other = state.rooms.find(x => x.id !== room.id && !room.hotspots.some(q => q.to === x.id)) || state.rooms.find(x => x.id !== room.id);
+    h = { id: uid(), yaw: +yaw.toFixed(4), pitch: +pitch.toFixed(4), to: other ? other.id : null };
+  }
+  const kind = placing;
+  room.hotspots.push(h);
+  selHs = h.id; setPlacing(null); markDirty(); renderHotspots(); renderEditor();
+  if (kind === 'info') { toast('Etiqueta añadida. Escribe el título y el texto abajo.'); const t = document.querySelector(`[data-hs="${h.id}"] input`); t && t.focus(); }
+  else toast(h.to ? 'Punto añadido. Revisa el destino abajo.' : 'Punto añadido. Añade otra habitación para conectarlo.');
+}
+
+/* ---------- minimap ---------- */
+const mm = $('#minimap'), mmIn = $('#mmIn'), mmImg = $('#mmImg');
+let coneEl = null, coneFov = -1;
+function hasPlan() { return !!state.plan || state.rooms.some(r => r.plan); }
+function renderMinimap() {
+  const show = hasPlan() || planPlacing;
+  mm.hidden = !show || state.rooms.length === 0;
+  if (mm.hidden) return;
+  if (state.plan) {
+    mmIn.classList.remove('grid');
+    if (mmImg.getAttribute('src') !== state.plan.src) mmImg.src = state.plan.src;
+    mmImg.hidden = false;
+    mmIn.style.aspectRatio = (state.plan.w || 4) + ' / ' + (state.plan.h || 3);
+  } else { mmIn.classList.add('grid'); mmImg.hidden = true; mmIn.style.aspectRatio = '4 / 3'; }
+  mmIn.querySelectorAll('.mm-dot,.mm-name,.mm-cone').forEach(n => n.remove());
+  coneEl = null; coneFov = -1;
+  for (const r of state.rooms) {
+    if (!r.plan) continue;
+    const b = document.createElement('button');
+    b.className = 'mm-dot' + (r.id === curId ? ' cur' : '');
+    b.style.left = (r.plan.x * 100) + '%'; b.style.top = (r.plan.y * 100) + '%';
+    b.title = r.name;
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      if (planPlacing) return;
+      stopAuto();
+      if (r.id !== curId) showRoom(r.id);
+    });
+    const n = document.createElement('span'); n.className = 'mm-name'; n.textContent = r.name;
+    n.style.left = b.style.left; n.style.top = b.style.top;
+    mmIn.append(b, n);
+    if (r.id === curId) {
+      coneEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      coneEl.setAttribute('viewBox', '0 0 100 100'); coneEl.classList.add('mm-cone');
+      coneEl.innerHTML = '<defs><radialGradient id="cg"><stop offset="0" stop-color="#e8b65a" stop-opacity=".85"/><stop offset="1" stop-color="#e8b65a" stop-opacity="0"/></radialGradient></defs><path fill="url(#cg)"/>';
+      coneEl.style.left = b.style.left; coneEl.style.top = b.style.top;
+      mmIn.appendChild(coneEl);
+    }
+  }
+}
+function updateCone() {
+  if (!coneEl || mm.hidden) return;
+  const room = getRoom(curId); if (!room || !room.plan) return;
+  const hh = Math.atan(Math.tan(rad(view.fov) / 2) * camera.aspect);
+  if (Math.abs(hh - coneFov) > 0.01) {
+    coneFov = hh;
+    const a = Math.min(hh, 1.4), x1 = 50 + 48 * Math.sin(-a), y1 = 50 - 48 * Math.cos(a), x2 = 50 + 48 * Math.sin(a);
+    coneEl.querySelector('path').setAttribute('d', `M50 50 L${x1.toFixed(1)} ${y1.toFixed(1)} A48 48 0 0 1 ${x2.toFixed(1)} ${y1.toFixed(1)} Z`);
+  }
+  coneEl.style.transform = `rotate(${(deg(view.yaw) + (room.planRot || 0)).toFixed(1)}deg)`;
+}
+mmIn.addEventListener('click', e => {
+  if (planPlacing) {
+    const r = mmIn.getBoundingClientRect();
+    const room = getRoom(curId); if (!room) return;
+    room.plan = { x: +clamp((e.clientX - r.left) / r.width, 0, 1).toFixed(4), y: +clamp((e.clientY - r.top) / r.height, 0, 1).toFixed(4) };
+    room.planRot = room.planRot || 0;
+    markDirty(); setPlanPlacing(false); renderMinimap(); renderEditor();
+    toast('Ubicada. Ajusta la dirección para que el cono apunte bien.', 3200);
+    return;
+  }
+  mm.classList.toggle('big');
+});
+$('#mmClose').addEventListener('click', e => { e.stopPropagation(); mm.classList.remove('big'); if (planPlacing) setPlanPlacing(false); });
+
+/* ---------- gallery ---------- */
+let gal = { list: [], i: 0 };
+function openGallery(list, i = 0) { if (!list.length) return; gal = { list, i }; stopAuto(); $('#gallery').hidden = false; galShow(); }
+function galShow() {
+  const p = gal.list[gal.i]; $('#gImg').src = p.src; $('#gCap').textContent = p.caption || '';
+  $('#gCount').textContent = (gal.i + 1) + ' de ' + gal.list.length;
+  $('#gPrev').hidden = $('#gNext').hidden = gal.list.length < 2;
+}
+function galStep(d) { gal.i = (gal.i + d + gal.list.length) % gal.list.length; galShow(); }
+function closeGallery() { $('#gallery').hidden = true; }
+$('#gPrev').addEventListener('click', () => galStep(-1));
+$('#gNext').addEventListener('click', () => galStep(1));
+$('#gClose').addEventListener('click', closeGallery);
+{ let sx = null; const w = $('#gImgWrap');
+  w.addEventListener('pointerdown', e => { sx = e.clientX; });
+  w.addEventListener('pointerup', e => { if (sx == null) return; const dx = e.clientX - sx; sx = null; if (Math.abs(dx) > 50) galStep(dx < 0 ? 1 : -1); }); }
+$('#btnPhotos').addEventListener('click', () => { const r = getRoom(curId); r && openGallery(r.photos); });
+
+/* ---------- chrome ---------- */
+function propHas() { const p = state.property || {}; return ['price', 'location', 'area', 'lot', 'bedrooms', 'bathrooms', 'parking', 'type', 'description', 'whatsapp', 'contact'].some(k => (p[k] || '').trim()); }
+function updateChrome() {
+  $('#title').textContent = state.title;
+  const room = getRoom(curId);
+  const empty = state.rooms.length === 0;
+  $('#roomLabel').textContent = room ? room.name : '';
+  $('#roomLabel').hidden = !room;
+  const nph = room ? room.photos.length : 0;
+  $('#btnPhotos').hidden = !nph; $('#photoCount').textContent = nph;
+  $('#btnRooms').hidden = state.rooms.length < 2;
+  $('#btnDetails').hidden = !propHas();
+  $('#btnEdit').hidden = !canEdit || mode === 'edit';
+  $('#btnAuto').hidden = state.rooms.length === 0;
+  $('#empty').hidden = !empty;
+  $('#emptyMsg').textContent = canEdit ? 'Añade las fotos panorámicas que tomaste con el celular, una por habitación.' : 'Este recorrido aún no tiene fotos.';
+  $('#emptyAdd').hidden = !canEdit;
+  $('#hint').hidden = empty;
+}
+$('#btnRooms').addEventListener('click', e => {
+  e.stopPropagation();
+  const m = $('#roomsMenu');
+  if (!m.hidden) { m.hidden = true; return; }
+  m.innerHTML = '';
+  for (const r of state.rooms) {
+    const b = document.createElement('button');
+    if (r.id === curId) b.className = 'cur';
+    const im = document.createElement('img'); im.src = r.src; im.alt = '';
+    const s = document.createElement('span'); s.textContent = r.name;
+    b.append(im, s);
+    b.addEventListener('click', () => { m.hidden = true; stopAuto(); if (r.id !== curId) showRoom(r.id); });
+    m.appendChild(b);
+  }
+  m.hidden = false;
+});
+document.addEventListener('click', e => { if (!e.target.closest('#roomsMenu,#btnRooms')) $('#roomsMenu').hidden = true; });
+
+/* ---------- toast / modal ---------- */
+let toastT;
+function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms); }
+function modal(node) { const b = $('#modalBody'); b.innerHTML = ''; if (typeof node === 'string') b.innerHTML = node; else b.appendChild(node); $('#modal').hidden = false; }
+$('#modalClose').addEventListener('click', () => { $('#modal').hidden = true; });
+$('#modalX').addEventListener('click', () => { $('#modal').hidden = true; });
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') $('#modal').hidden = true; });
+$('#btnTips').addEventListener('click', () => modal(`
+<h3>Cómo tomar las panorámicas con el celular</h3>
+<ol>
+<li><b>Una foto por habitación</b>, desde el centro del cuarto, con el modo <b>Panorámica</b> de la cámara.</li>
+<li><b>Gira el celular sobre sí mismo</b>, no tu cuerpo: imagina que el teléfono es el eje. Mantenlo a la altura del pecho y vertical.</li>
+<li>Muévete <b>despacio y parejo</b>, siguiendo la línea guía. Si tu celular lo permite, da la <b>vuelta completa</b> (360°).</li>
+<li>Asegúrate de que las <b>puertas</b> hacia otras habitaciones salgan en la foto: ahí pondrás los puntos para avanzar.</li>
+<li>Enciende las luces y abre cortinas; evita que haya gente moviéndose.</li>
+<li>Toma también <b>fotos normales</b> de detalles (baño, acabados, vista) para la galería de cada cuarto.</li>
+<li>Al subirla, ajusta el <b>ángulo</b> hasta que las paredes se vean rectas (360° si diste la vuelta completa).</li>
+</ol>
+<p class="note">Las fotos se reducen automáticamente para que el recorrido cargue rápido en el celular.</p>`));
+
+const WA_ICON = '<svg viewBox="0 0 24 24" fill="#05230f"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.1-.4-4.4-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1-.2-.1-1-.4-2-1.2-.7-.6-1.2-1.4-1.3-1.7-.1-.2 0-.4.1-.5l.4-.4.2-.4v-.4l-.8-1.9c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.7.3-.2.2-.9.9-.9 2.2s.9 2.5 1 2.7c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3z"/></svg>';
+$('#btnDetails').addEventListener('click', () => {
+  const p = state.property || {};
+  const d = document.createElement('div');
+  const add = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; e.textContent = text; d.appendChild(e); return e; };
+  add('h3', '', state.title);
+  if ((p.type || '').trim()) add('div', 'note', p.type.trim().toUpperCase());
+  if ((p.price || '').trim()) add('div', 'prop-price', p.price.trim());
+  if ((p.location || '').trim()) add('div', 'prop-loc', p.location.trim());
+  const chips = document.createElement('div'); chips.className = 'chips';
+  const chip = (v, suffix) => { if ((v || '').trim()) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = v.trim() + suffix; chips.appendChild(c); } };
+  chip(p.area, ' construcción'); chip(p.lot, ' lote'); chip(p.bedrooms, ' hab.'); chip(p.bathrooms, ' baños'); chip(p.parking, ' parqueos');
+  if (chips.children.length) d.appendChild(chips);
+  if ((p.description || '').trim()) add('p', 'prop-desc', p.description.trim());
+  if ((p.contact || '').trim()) add('div', 'note', 'Contacto: ' + p.contact.trim()).style.marginBottom = '8px';
+  const digits = (p.whatsapp || '').replace(/\D/g, '');
+  if (digits.length >= 8) {
+    const a = document.createElement('a'); a.className = 'wa'; a.target = '_blank'; a.rel = 'noopener';
+    a.href = 'https://wa.me/' + digits + '?text=' + encodeURIComponent('Hola, vi el recorrido virtual de «' + state.title + '» y me interesa.');
+    a.innerHTML = WA_ICON + '<span>Escribir por WhatsApp</span>';
+    d.appendChild(a);
+    add('div', 'note', 'WhatsApp: +' + digits).style.cssText = 'text-align:center;margin-top:6px';
+  }
+  modal(d);
+});
+
+/* ---------- editor ---------- */
+function markDirty() { dirty = true; $('#dirty').hidden = false; }
+function setPlacing(kind) {
+  placing = kind;
+  if (kind) { setPlanPlacing(false); stopAuto(); hideHint(); closeInfo(); }
+  $('#stage').classList.toggle('placing', !!kind);
+  const bn = $('#placeBanner');
+  bn.hidden = !kind && !planPlacing;
+  if (kind) bn.textContent = kind === 'info' ? 'Toca el lugar que quieres etiquetar' : 'Toca la puerta o el lugar del punto';
+  $('#btnPlace').classList.toggle('on', kind === 'nav'); $('#btnPlace').textContent = kind === 'nav' ? 'Cancelar' : '+ Punto de paso';
+  $('#btnPlaceInfo').classList.toggle('on', kind === 'info'); $('#btnPlaceInfo').textContent = kind === 'info' ? 'Cancelar' : '+ Etiqueta';
+}
+function setPlanPlacing(on) {
+  planPlacing = on;
+  if (on) { setPlacing(null); renderMinimap(); mm.hidden = false; mm.classList.add('big', 'placing'); }
+  else { mm.classList.remove('placing'); }
+  const bn = $('#placeBanner');
+  bn.hidden = !on && !placing;
+  if (on) bn.textContent = 'Toca en el plano dónde tomaste la foto';
+  bn.style.top = on ? '12px' : '';
+  $('#btnPlanPlace').classList.toggle('on', on);
+  if (!on) renderMinimap();
+}
+function setMode(m) {
+  mode = m === 'edit' && canEdit ? 'edit' : 'view';
+  $('#editor').hidden = mode !== 'edit';
+  $('#app').classList.toggle('editing', mode === 'edit');
+  if (mode !== 'edit') { setPlacing(null); setPlanPlacing(false); selHs = null; }
+  else stopAuto();
+  updateChrome(); renderHotspots(); renderEditor();
+}
+$('#btnEdit').addEventListener('click', () => setMode('edit'));
+$('#btnView').addEventListener('click', () => setMode('view'));
+
+function el(tag, props = {}, ...kids) { const e = document.createElement(tag); Object.assign(e, props); for (const k of kids) e.append(k); return e; }
+function renderEditor() {
+  if (mode !== 'edit') return;
+  const ti = $('#tourTitle'); if (document.activeElement !== ti) ti.value = state.title;
+  const strip = $('#roomStrip'); strip.innerHTML = '';
+  const startId = state.start && getRoom(state.start) ? state.start : state.rooms[0]?.id;
+  for (const r of state.rooms) {
+    const b = el('button', { className: 'rt' + (r.id === curId ? ' cur' : '') });
+    const s = el('span');
+    if (r.id === startId) s.appendChild(el('b', { className: 'star', textContent: '★ ' }));
+    s.appendChild(document.createTextNode(r.name));
+    b.append(el('img', { src: r.src, alt: '' }), s);
+    b.addEventListener('click', () => { if (r.id !== curId) { selHs = null; setPlacing(null); showRoom(r.id); } });
+    strip.appendChild(b);
+  }
+  const add = el('label', { className: 'add' });
+  add.innerHTML = '<span>＋ Añadir<br>panorámicas</span><input type="file" accept="image/*" multiple>';
+  add.querySelector('input').addEventListener('change', onFiles);
+  strip.appendChild(add);
+
+  $('#btnDemo').hidden = !(state.rooms.some(r => r.demo) || (state.plan && state.plan.demo) || state.property.demo);
+  $('#btnDownload').hidden = !caps.downloads && !localOnly;
+  $('#btnSave').hidden = localOnly;
+  $('#saveNote').textContent = localOnly ? 'Modo local: usa «Descargar HTML» para guardar tu recorrido (las fotos van dentro del archivo).' : '';
+  $('#planUpLabel').textContent = state.plan ? 'Cambiar plano' : 'Subir plano';
+  $('#btnPlanDel').hidden = !state.plan;
+  document.querySelectorAll('[data-prop]').forEach(i => { if (document.activeElement !== i) i.value = state.property[i.dataset.prop] || ''; });
+
+  const room = getRoom(curId);
+  $('#roomPanel').hidden = !room;
+  if (!room) return;
+  const rn = $('#roomName'); if (document.activeElement !== rn) rn.value = room.name;
+  $('#hfov').value = room.hfov; $('#hfovVal').textContent = room.hfov + '°';
+  $('#btnStartRoom').disabled = room.id === startId;
+  $('#btnStartRoom').textContent = room.id === startId ? '★ El recorrido empieza aquí' : 'Empezar aquí';
+  $('#btnPlanPlace').textContent = room.plan ? 'Mover en el plano' : 'Ubicar en el plano';
+  $('#btnPlanRemove').hidden = !room.plan;
+  $('#planRotBox').hidden = !room.plan;
+  $('#planRot').value = room.planRot || 0; $('#planRotVal').textContent = (room.planRot || 0) + '°';
+
+  const list = $('#hsList'); list.innerHTML = '';
+  if (!room.hotspots.length) list.appendChild(el('div', { className: 'note', textContent: 'Usa «Punto de paso» en las puertas para pasar a otra habitación, y «Etiqueta» para explicar algo de la foto.' }));
+  let nNav = 0, nInfo = 0;
+  for (const h of room.hotspots) {
+    const isInfo = h.type === 'info';
+    const row = el('div', { className: 'hsrow' + (isInfo ? ' infoRow' : '') });
+    row.dataset.hs = h.id;
+    if (selHs === h.id) row.style.borderColor = 'var(--accent)';
+    const go = el('button', { className: 'x', title: 'Mirar hacia aquí', textContent: '◎' });
+    go.addEventListener('click', () => { stopAuto(); animateTo({ yaw: h.yaw, pitch: h.pitch }, 450); selHs = h.id; renderHotspots(); renderEditor(); });
+    const del = el('button', { className: 'x', title: 'Eliminar', textContent: '✕' });
+    del.addEventListener('click', () => { room.hotspots = room.hotspots.filter(x => x !== h); closeInfo(); markDirty(); renderHotspots(); renderEditor(); });
+    if (isInfo) {
+      nInfo++;
+      const ti2 = el('input', { className: 'field grow', value: h.title || '', placeholder: 'Título', maxLength: 60 });
+      ti2.addEventListener('input', () => { h.title = ti2.value; markDirty(); renderHotspots(); });
+      const tx = el('textarea', { className: 'field', value: h.text || '', placeholder: 'Texto que verá el visitante', maxLength: 600 });
+      tx.style.minHeight = '54px';
+      tx.addEventListener('input', () => { h.text = tx.value; markDirty(); });
+      row.append(el('span', { className: 'tag i', textContent: 'ETIQUETA' }), ti2, go, del, tx);
+    } else {
+      nNav++;
+      const sel = el('select');
+      sel.appendChild(el('option', { value: '', textContent: 'Elegir destino…' }));
+      for (const r of state.rooms) if (r.id !== room.id) sel.appendChild(el('option', { value: r.id, textContent: r.name }));
+      sel.value = h.to || '';
+      sel.addEventListener('change', () => { h.to = sel.value || null; markDirty(); renderHotspots(); });
+      row.append(el('span', { className: 'tag', textContent: 'PASO →' }), sel, go, del);
+    }
+    list.appendChild(row);
+  }
+  const pl = $('#phList'); pl.innerHTML = '';
+  if (!room.photos.length) pl.appendChild(el('div', { className: 'note', textContent: 'Fotos normales (baño, acabados, vista…). El visitante las ve con el botón de cámara.' }));
+  room.photos.forEach((p, i) => {
+    const img = el('img', { src: p.src, alt: '' });
+    img.style.cursor = 'pointer';
+    img.addEventListener('click', () => openGallery(room.photos, i));
+    const cap = el('input', { className: 'field grow', value: p.caption || '', placeholder: 'Descripción (opcional)', maxLength: 80 });
+    cap.addEventListener('input', () => { p.caption = cap.value; markDirty(); });
+    const del = el('button', { className: 'x', title: 'Quitar foto', textContent: '✕' });
+    del.addEventListener('click', () => { room.photos = room.photos.filter(x => x !== p); markDirty(); updateChrome(); renderEditor(); });
+    pl.appendChild(el('div', { className: 'phRow' }, img, cap, del));
+  });
+}
+
+$('#tourTitle').addEventListener('input', e => { state.title = e.target.value.trim() || 'Recorrido virtual'; markDirty(); updateChrome(); });
+$('#roomName').addEventListener('input', e => {
+  const room = getRoom(curId); if (!room) return;
+  room.name = e.target.value.trim() || 'Habitación'; markDirty(); updateChrome(); renderHotspots(); renderMinimap();
+  clearTimeout(renderEditor._t); renderEditor._t = setTimeout(renderEditor, 400);
+});
+let hfovT;
+$('#hfov').addEventListener('input', e => {
+  const room = getRoom(curId); if (!room) return;
+  room.hfov = +e.target.value; $('#hfovVal').textContent = room.hfov + '°'; markDirty();
+  clearTimeout(hfovT);
+  hfovT = setTimeout(() => showRoom(room.id, { noFade: true, yaw: view.yaw, pitch: view.pitch, keepFov: true }), 120);
+});
+$('#planRot').addEventListener('input', e => {
+  const room = getRoom(curId); if (!room) return;
+  room.planRot = +e.target.value; $('#planRotVal').textContent = room.planRot + '°'; markDirty();
+  if (!mm.classList.contains('big')) mm.classList.add('big');
+});
+$('#btnStartView').addEventListener('click', () => {
+  const room = getRoom(curId); if (!room) return;
+  room.startYaw = +view.yaw.toFixed(4); room.startPitch = +view.pitch.toFixed(4); markDirty(); toast('Listo: al entrar se verá desde aquí');
+});
+$('#btnStartRoom').addEventListener('click', () => { state.start = curId; markDirty(); renderEditor(); });
+$('#btnPlace').addEventListener('click', () => setPlacing(placing === 'nav' ? null : 'nav'));
+$('#btnPlaceInfo').addEventListener('click', () => setPlacing(placing === 'info' ? null : 'info'));
+$('#btnPlanPlace').addEventListener('click', () => setPlanPlacing(!planPlacing));
+$('#btnPlanRemove').addEventListener('click', () => { const r = getRoom(curId); if (!r) return; delete r.plan; markDirty(); renderMinimap(); renderEditor(); });
+document.querySelectorAll('[data-prop]').forEach(i => i.addEventListener('input', () => {
+  state.property[i.dataset.prop] = i.value; delete state.property.demo; markDirty(); updateChrome();
+}));
+function armButton(btn, label, confirmLabel, fn) {
+  let t = 0;
+  btn.addEventListener('click', () => {
+    if (Date.now() - t > 3000) { t = Date.now(); btn.textContent = confirmLabel; setTimeout(() => { btn.textContent = label; }, 3000); return; }
+    t = 0; btn.textContent = label; fn();
+  });
+}
+armButton($('#btnDelRoom'), 'Eliminar habitación', '¿Seguro? Toca otra vez', () => { const room = getRoom(curId); room && removeRooms(r => r.id === room.id); });
+armButton($('#btnDemo'), 'Quitar ejemplo', '¿Quitar todo el ejemplo? Toca otra vez', () => {
+  removeRooms(r => r.demo);
+  if (state.plan && state.plan.demo) state.plan = null;
+  if (state.property.demo) state.property = {};
+  if (state.title === 'Casa de ejemplo') state.title = 'Recorrido virtual';
+  markDirty(); updateChrome(); renderMinimap(); renderEditor();
+});
+armButton($('#btnPlanDel'), 'Quitar imagen', '¿Quitar el plano? Toca otra vez', () => { state.plan = null; markDirty(); renderMinimap(); renderEditor(); });
+function removeRooms(pred) {
+  const gone = new Set(state.rooms.filter(pred).map(r => r.id));
+  state.rooms = state.rooms.filter(r => !gone.has(r.id));
+  for (const r of state.rooms) r.hotspots = r.hotspots.filter(h => !gone.has(h.to));
+  if (gone.has(state.start)) state.start = state.rooms[0]?.id || null;
+  markDirty();
+  if (gone.has(curId)) {
+    curId = null; disposePano(); renderHotspots(); closeInfo();
+    if (state.rooms.length) showRoom(state.start || state.rooms[0].id); else { updateChrome(); renderEditor(); renderMinimap(); }
+  } else { renderHotspots(); renderEditor(); renderMinimap(); }
+}
+
+/* ---------- uploads ---------- */
+function estimateHfov(aspect) {
+  const d = deg(aspect * 2 * Math.tan(rad(30)));
+  if (d > 300) return 360;
+  return clamp(Math.round(d / 5) * 5, 30, 360);
+}
+async function prepImage(file, kind) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; });
+    const w0 = img.naturalWidth, h0 = img.naturalHeight, aspect = w0 / h0;
+    let w, h;
+    if (kind === 'pano') { h = Math.max(1, Math.min(h0, 2048, Math.floor(Math.sqrt(16e6 / aspect)))); w = Math.max(1, Math.round(h * aspect)); }
+    else { const max = kind === 'plan' ? 2000 : 1600; const s = Math.min(1, max / Math.max(w0, h0)); w = Math.round(w0 * s); h = Math.round(h0 * s); }
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', kind === 'plan' ? 0.9 : 0.86));
+    if (!blob) throw new Error('blob');
+    return { blob, w, h };
+  } finally { URL.revokeObjectURL(url); }
+}
+const blobToDataURL = b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(b); });
+async function storeBlob(blob) {
+  if (caps.assets) { const up = await caps.assets.upload(blob); return { src: '/_blob/' + up.id, assetId: up.id }; }
+  return { src: await blobToDataURL(blob), assetId: null };
+}
+let busy = false;
+async function withFiles(files, kind, each) {
+  if (!files.length || busy || !canEdit) return 0;
+  busy = true; let ok = 0;
+  try {
+    for (let i = 0; i < files.length; i++) {
+      toast(files.length > 1 ? `Procesando foto ${i + 1} de ${files.length}…` : 'Procesando foto…', 60000);
+      let p;
+      try { p = await prepImage(files[i], kind); } catch (err) { toast('No pude leer «' + files[i].name + '». Prueba con JPG o PNG.', 4000); await sleep(1500); continue; }
+      let st;
+      try { st = await storeBlob(p.blob); } catch (err) { toast('No se pudo subir la foto (' + (err && err.code || 'error') + ')', 4000); await sleep(1500); continue; }
+      const ou = URL.createObjectURL(p.blob); const pr = loadImage(ou); imgCache.delete(ou); imgCache.set(st.src, pr);
+      await each(p, st); ok++;
+    }
+  } finally { busy = false; }
+  return ok;
+}
+async function onFiles(e) {
+  const files = [...(e.target.files || [])]; e.target.value = '';
+  let first = null;
+  const n = await withFiles(files, 'pano', (p, st) => {
+    const k = state.rooms.filter(r => !r.demo).length + 1;
+    const room = { id: uid(), name: 'Habitación ' + k, src: st.src, assetId: st.assetId, w: p.w, h: p.h, hfov: estimateHfov(p.w / p.h), startYaw: 0, startPitch: 0, hotspots: [], photos: [] };
+    state.rooms.push(room);
+    if (!state.start || !getRoom(state.start)) state.start = room.id;
+    first = first || room; markDirty();
+  });
+  if (n) { toast('Fotos añadidas. Ponles nombre y conecta las puertas.', 3200); await showRoom(first.id); }
+  updateChrome(); renderEditor();
+}
+$('#emptyAdd input').addEventListener('change', async e => { if (mode !== 'edit') setMode('edit'); await onFiles(e); });
+$('#phIn').addEventListener('change', async e => {
+  const files = [...(e.target.files || [])]; e.target.value = '';
+  const room = getRoom(curId); if (!room) return;
+  const n = await withFiles(files, 'photo', (p, st) => { room.photos.push({ id: uid(), src: st.src, assetId: st.assetId, caption: '' }); markDirty(); });
+  if (n) toast(n === 1 ? 'Foto añadida' : n + ' fotos añadidas');
+  updateChrome(); renderEditor();
+});
+$('#planIn').addEventListener('change', async e => {
+  const files = [...(e.target.files || [])].slice(0, 1); e.target.value = '';
+  const n = await withFiles(files, 'plan', (p, st) => { state.plan = { src: st.src, assetId: st.assetId, w: p.w, h: p.h }; markDirty(); });
+  if (n) { toast('Plano listo. Ahora ubica cada habitación.', 3200); renderMinimap(); mm.classList.add('big'); }
+  renderEditor();
+});
+
+/* ---------- save / export ---------- */
+function esc(t) { return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function buildDoc(data) {
+  const css = document.getElementById('app-css').textContent;
+  const imp = document.getElementById('app-importmap').textContent;
+  const js = document.getElementById('app-js').textContent;
+  const shell = document.getElementById('app-shell').innerHTML;
+  const json = JSON.stringify(data).replace(/</g, '\\u003c');
+  return '<!DOCTYPE html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">\n<title>' + (data.readonly ? esc(data.title || 'Recorrido virtual') : 'Recorrido virtual') + '<\/title>\n'
+    + '<style id="app-css">' + css + '<\/style>\n'
+    + '<script type="importmap" id="app-importmap">' + imp + '<\/script>\n<\/head>\n<body>\n'
+    + '<template id="app-shell">' + shell + '<\/template>\n'
+    + '<script id="tour-data" type="application/json">' + json + '<\/script>\n'
+    + '<script type="module" id="app-js">' + js + '<\/script>\n<\/body>\n<\/html>\n';
+}
+function cleanState() {
+  const s = JSON.parse(JSON.stringify({ title: state.title, start: state.start || state.rooms[0]?.id || null, rooms: state.rooms, plan: state.plan, property: state.property }));
+  for (const r of s.rooms) r.hotspots = r.hotspots.map(h => h.type === 'info' ? h : { id: h.id, yaw: h.yaw, pitch: h.pitch, to: h.to });
+  return s;
+}
+$('#btnSave').addEventListener('click', async () => {
+  if (localOnly || !caps.artifact) { toast('Guardar no está disponible en esta vista.', 3500); return; }
+  const btn = $('#btnSave'); btn.disabled = true; btn.textContent = 'Guardando…';
+  try { sessionStorage.setItem('tour-ui', JSON.stringify({ mode: 'edit', room: curId, yaw: view.yaw, pitch: view.pitch })); } catch (e) {}
+  try {
+    const doc = buildDoc(cleanState());
+    dirty = false;
+    await caps.artifact.publish(doc);
+    toast('Guardado');
+  } catch (err) {
+    dirty = true;
+    const c = err && err.code;
+    if (c === 'conflict') toast('Alguien guardó otra versión; recargando…', 4000);
+    else if (['not_writer', 'not_granted', 'consent_required', 'capability_disabled', 'not_declared'].includes(c)) toast('Esta vista es de solo lectura: no puedes guardar cambios aquí.', 4000);
+    else if (c === 'too_large') toast('El recorrido es demasiado grande para guardarlo. Quita alguna foto.', 4500);
+    else toast('No se pudo guardar (' + (c || 'error') + '). Intenta de nuevo.', 4000);
+  } finally { btn.disabled = false; btn.textContent = 'Guardar'; }
+});
+async function inlineSrc(src) { if (!src || src.startsWith('data:')) return src; const b = await (await fetch(src)).blob(); return blobToDataURL(b); }
+$('#btnDownload').addEventListener('click', async () => {
+  if (!caps.downloads && !localOnly) return;
+  const btn = $('#btnDownload'); btn.disabled = true; btn.textContent = 'Preparando…';
+  try {
+    const data = cleanState(); data.readonly = true;
+    for (const r of data.rooms) {
+      delete r.assetId; delete r.demo; r.src = await inlineSrc(r.src);
+      for (const p of r.photos) { delete p.assetId; p.src = await inlineSrc(p.src); }
+    }
+    if (data.plan) { delete data.plan.assetId; delete data.plan.demo; data.plan.src = await inlineSrc(data.plan.src); }
+    if (data.property) delete data.property.demo;
+    const name = (state.title || 'recorrido').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'recorrido';
+    const blob = new Blob([buildDoc(data)], { type: 'text/html' });
+    if (caps.downloads) await caps.downloads.save({ filename: name + '.html', data: blob });
+    else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = name + '.html';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
+    dirty = false; $('#dirty').hidden = true;
+    toast('Archivo listo. Puedes abrirlo en cualquier navegador o subirlo a tu web.', 4000);
+  } catch (err) {
+    const c = err && err.code;
+    if (c !== 'declined') toast('No se pudo descargar (' + (c || 'error') + ')', 4000);
+  } finally { btn.disabled = false; btn.textContent = 'Descargar HTML'; }
+});
+window.addEventListener('beforeunload', e => { if (dirty && mode === 'edit') { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- loop ---------- */
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  stepAnim(now);
+  if (gyro.on && gyro.got && !anim) { view.yaw = gyro.yaw + gyro.offset; view.pitch = gyro.pitch; clampView(); }
+  stepAuto(dt);
+  camera.fov = view.fov; camera.updateProjectionMatrix();
+  camera.rotation.set(view.pitch, -view.yaw, 0);
+  camera.updateMatrixWorld();
+  renderer.render(scene, camera);
+  positionHotspots(); updateCone();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- start ---------- */
+let ui = null;
+try { ui = JSON.parse(sessionStorage.getItem('tour-ui') || 'null'); sessionStorage.removeItem('tour-ui'); } catch (e) {}
+$('#btnGyro').hidden = !(typeof DeviceOrientationEvent !== 'undefined' && window.matchMedia && matchMedia('(pointer:coarse)').matches);
+resize();
+requestAnimationFrame(loop);
+updateChrome(); renderMinimap();
+const startId = (ui && getRoom(ui.room) && ui.room) || (getRoom(state.start) && state.start) || state.rooms[0]?.id;
+if (startId) showRoom(startId, ui && ui.room === startId ? { yaw: ui.yaw, pitch: ui.pitch } : {});
+
+(async () => {
+  let cl = window.claude;
+  for (let i = 0; i < 15 && !(cl && typeof cl.use === 'function'); i++) { await sleep(100); cl = window.claude; }
+  if (!cl || typeof cl.use !== 'function') {
+    localOnly = true; canEdit = !state.readonly || location.hash === '#editar';
+  } else {
+    const [a, s, d] = await Promise.all(['artifact', 'assets', 'downloads'].map(n => cl.use(n).catch(() => null)));
+    caps.artifact = a; caps.assets = s; caps.downloads = d;
+    canEdit = !state.readonly && !!a && !!s;
+  }
+  updateChrome();
+  if (canEdit && ui && ui.mode === 'edit') setMode('edit');
+  else renderEditor();
+})();
+</script>
+</body>
+</html>
