@@ -8,6 +8,7 @@ Recorridos virtuales de casas hechos con fotos panorámicas del celular. Cada re
 |---|---|
 | `editor.html` | Editor vacío. Ábrelo en tu computadora para crear un recorrido nuevo. |
 | `index.html` | Recorrido de ejemplo: la portada del sitio. |
+| `actualizar.py` | Copia el código de `editor.html` a todos los recorridos (ver abajo). |
 
 ## Crear un recorrido nuevo
 
@@ -36,6 +37,18 @@ file:///C:/MyRepos/sueltos/recorridos/casa-heredia.html#editar
 ```
 
 Haz los cambios, descarga de nuevo y reemplaza el archivo.
+
+Si partes del ejemplo (`index.html#editar`), el botón **Quitar ejemplo** borra de una vez sus habitaciones, el plano y la ficha.
+
+## Actualizar el código de todos los recorridos
+
+Cada recorrido lleva dentro su propia copia de la app. Cuando cambies `editor.html` (por ejemplo, para corregir un error), pasa el cambio a todos los recorridos con:
+
+```bash
+python actualizar.py
+```
+
+El script reemplaza solo el código: las fotos, habitaciones, plano, ficha y título de cada recorrido quedan igual. Para actualizar solo algunos, pon sus nombres: `python actualizar.py casa-heredia.html`.
 
 ## Publicar en GitHub Pages
 
@@ -69,4 +82,5 @@ git push
 
 - El visor usa [three.js](https://threejs.org), que se carga desde internet: el recorrido necesita conexión para abrirse.
 - **Mirar moviendo el celular** (giroscopio) funciona en la versión publicada en GitHub Pages, porque se sirve por HTTPS. En iPhone pide permiso la primera vez.
-- Las fotos se reducen automáticamente al subirlas, para que el recorrido cargue rápido en el celular.
+- Las fotos se reducen automáticamente al subirlas (cada panorámica queda en ~1 MB o menos), para que el recorrido cargue rápido en el celular.
+- Cada vez que subes un recorrido actualizado, Git guarda una copia completa con todas sus fotos. Para que el repositorio no crezca de más, sube los cambios cuando estén listos y no después de cada pequeño ajuste.

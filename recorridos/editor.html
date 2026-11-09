@@ -2,13 +2,14 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Recorrido virtual</title>
 <style id="app-css">
 :root{--bg:#0f1012;--panel:#17181b;--line:#2a2c31;--text:#ecebe7;--mute:#9a9893;--accent:#e8b65a;--accent-ink:#1b1406;--danger:#e2705f;--wa:#25d366;--glass:rgba(18,19,22,.62)}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;-webkit-tap-highlight-color:transparent}
 button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{font-size:16px}
 button{cursor:pointer}
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh}
 #stage{position:relative;flex:1;min-height:0;overflow:hidden;background:#111214}
@@ -183,7 +184,7 @@ details.box .sec{margin-top:10px}
       <div class="mm-in" id="mmIn"><img id="mmImg" alt="" hidden></div>
       <button class="mm-x" id="mmClose" title="Cerrar plano"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
-    <div id="infoCard" hidden><button class="cardx" id="infoClose">✕</button><h4 id="infoTitle"></h4><p id="infoText"></p></div>
+    <div id="infoCard" hidden><button class="cardx" id="infoClose" aria-label="Cerrar">✕</button><h4 id="infoTitle"></h4><p id="infoText"></p></div>
     <div id="hint">Arrastra para mirar alrededor</div>
   </div>
   <section id="editor" hidden>
@@ -269,12 +270,12 @@ details.box .sec{margin-top:10px}
   </section>
 </div>
 <div id="gallery" hidden>
-  <div class="gtop"><span id="gCount"></span><button class="cardx" style="position:static" id="gClose">✕</button></div>
-  <div id="gImgWrap"><img id="gImg" alt=""><button class="gnav" id="gPrev">‹</button><button class="gnav" id="gNext">›</button></div>
+  <div class="gtop"><span id="gCount"></span><button class="cardx" style="position:static" id="gClose" aria-label="Cerrar">✕</button></div>
+  <div id="gImgWrap"><img id="gImg" alt=""><button class="gnav" id="gPrev" aria-label="Foto anterior">‹</button><button class="gnav" id="gNext" aria-label="Foto siguiente">›</button></div>
   <div id="gCap"></div>
 </div>
 <div id="toast"></div>
-<div id="modal" hidden><div class="card"><button class="cardx" id="modalX">✕</button><div id="modalBody"></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn primary" id="modalClose">Cerrar</button></div></div></div>
+<div id="modal" hidden><div class="card"><button class="cardx" id="modalX" aria-label="Cerrar">✕</button><div id="modalBody"></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn primary" id="modalClose">Cerrar</button></div></div></div>
 </template>
 <script id="tour-data" type="application/json">{"title": "Recorrido virtual", "rooms": []}</script>
 <script type="module" id="app-js">
@@ -470,6 +471,7 @@ function renderHotspots() {
     el.innerHTML = '<span class="ring">' + (isInfo ? INFO_I : ARROW) + '</span><span class="lbl"></span>';
     const target = isInfo ? null : getRoom(h.to);
     el.querySelector('.lbl').textContent = isInfo ? (h.title || 'Etiqueta') : (target ? target.name : 'Sin destino');
+    el.setAttribute('aria-label', isInfo ? 'Etiqueta: ' + (h.title || '') : (target ? 'Ir a ' + target.name : 'Punto sin destino'));
     el.addEventListener('click', e => {
       e.stopPropagation();
       if (placing || planPlacing) return;
@@ -1004,11 +1006,12 @@ async function prepImage(file, kind) {
     const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; });
     const w0 = img.naturalWidth, h0 = img.naturalHeight, aspect = w0 / h0;
     let w, h;
-    if (kind === 'pano') { h = Math.max(1, Math.min(h0, 2048, Math.floor(Math.sqrt(16e6 / aspect)))); w = Math.max(1, Math.round(h * aspect)); }
+    // Límites pensados para que cada panorámica pese ~1 MB o menos y cargue bien con datos móviles.
+    if (kind === 'pano') { h = Math.max(1, Math.min(h0, 1536, Math.floor(Math.sqrt(10e6 / aspect)))); w = Math.max(1, Math.round(h * aspect)); }
     else { const max = kind === 'plan' ? 2000 : 1600; const s = Math.min(1, max / Math.max(w0, h0)); w = Math.round(w0 * s); h = Math.round(h0 * s); }
     const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
     const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
-    const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', kind === 'plan' ? 0.9 : 0.86));
+    const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', kind === 'plan' ? 0.9 : 0.82));
     if (!blob) throw new Error('blob');
     return { blob, w, h };
   } finally { URL.revokeObjectURL(url); }
@@ -1071,7 +1074,7 @@ function buildDoc(data) {
   const js = document.getElementById('app-js').textContent;
   const shell = document.getElementById('app-shell').innerHTML;
   const json = JSON.stringify(data).replace(/</g, '\\u003c');
-  return '<!DOCTYPE html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">\n<title>' + (data.readonly ? esc(data.title || 'Recorrido virtual') : 'Recorrido virtual') + '<\/title>\n'
+  return '<!DOCTYPE html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>' + (data.readonly ? esc(data.title || 'Recorrido virtual') : 'Recorrido virtual') + '<\/title>\n'
     + '<style id="app-css">' + css + '<\/style>\n'
     + '<script type="importmap" id="app-importmap">' + imp + '<\/script>\n<\/head>\n<body>\n'
     + '<template id="app-shell">' + shell + '<\/template>\n'
@@ -1108,11 +1111,11 @@ $('#btnDownload').addEventListener('click', async () => {
   try {
     const data = cleanState(); data.readonly = true;
     for (const r of data.rooms) {
-      delete r.assetId; delete r.demo; r.src = await inlineSrc(r.src);
+      // Las marcas "demo" se conservan para que «Quitar ejemplo» siga funcionando al editar con #editar.
+      delete r.assetId; r.src = await inlineSrc(r.src);
       for (const p of r.photos) { delete p.assetId; p.src = await inlineSrc(p.src); }
     }
-    if (data.plan) { delete data.plan.assetId; delete data.plan.demo; data.plan.src = await inlineSrc(data.plan.src); }
-    if (data.property) delete data.property.demo;
+    if (data.plan) { delete data.plan.assetId; data.plan.src = await inlineSrc(data.plan.src); }
     const name = (state.title || 'recorrido').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'recorrido';
     const blob = new Blob([buildDoc(data)], { type: 'text/html' });
     if (caps.downloads) await caps.downloads.save({ filename: name + '.html', data: blob });
