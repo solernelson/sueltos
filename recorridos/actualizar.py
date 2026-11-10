@@ -27,6 +27,9 @@ def leer(p: Path) -> str:
 
 
 def main() -> int:
+    # Algunas consolas de Windows no pueden mostrar ✓ o ✗: así no se cae el script.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     plantilla = leer(PLANTILLA)
     if not DATOS.search(plantilla) or not TITULO.search(plantilla):
         print("editor.html no tiene el formato esperado; no se cambió nada.")

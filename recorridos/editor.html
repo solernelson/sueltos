@@ -45,6 +45,12 @@ button{cursor:pointer}
 #roomLabel{font-weight:650;font-size:15px;padding:7px 12px;border-radius:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #btnPhotos{display:flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:6px 10px;font-weight:600;font-size:14px}
 #btnPhotos svg{width:18px;height:18px}
+#views{display:flex;gap:2px;padding:3px;border-radius:10px;border:1px solid rgba(255,255,255,.22)}
+#views button{min-width:30px;height:28px;border:0;background:none;border-radius:7px;font-weight:650;font-size:14px;padding:0 6px}
+#views button.cur{background:var(--accent);color:var(--accent-ink)}
+.viewStrip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.viewStrip .rt,.viewStrip .add{width:92px}
+.viewStrip .add{min-height:64px}
 #hint{position:absolute;left:50%;top:44%;transform:translateX(-50%);z-index:2;font-size:13px;color:#eee;background:rgba(15,16,18,.6);padding:6px 12px;border-radius:999px;transition:opacity .5s;white-space:nowrap;pointer-events:none}
 #hint.gone{opacity:0}
 #placeBanner{position:absolute;left:50%;top:66px;transform:translateX(-50%);z-index:6;background:var(--accent);color:var(--accent-ink);font-weight:650;padding:8px 14px;border-radius:999px;font-size:14px;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
@@ -178,6 +184,7 @@ details.box .sec{margin-top:10px}
     <div id="placeBanner" hidden></div>
     <div id="bl">
       <div id="roomLabel" class="glass"></div>
+      <div id="views" class="glass" role="group" aria-label="Vistas de esta habitación" hidden></div>
       <button id="btnPhotos" class="glass" hidden><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"><path d="M4 7.5h3.2L9 5h6l1.8 2.5H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="photoCount"></span></button>
     </div>
     <div id="minimap" class="glass" hidden>
@@ -203,6 +210,10 @@ details.box .sec{margin-top:10px}
     </div>
     <div id="roomPanel" class="sec" hidden>
       <input class="field" id="roomName" placeholder="Nombre de la habitación" maxlength="40">
+      <div class="lab" style="margin-top:4px">Panorámicas de esta habitación</div>
+      <div class="viewStrip" id="viewStrip"></div>
+      <div class="note" id="viewNote"></div>
+      <div class="row" id="viewRow" hidden><span class="note grow" id="viewTitle"></span><button class="btn danger" id="btnDelView">Quitar esta panorámica</button></div>
       <div>
         <div class="row"><span class="lab grow">Ángulo de la panorámica</span><b id="hfovVal"></b></div>
         <input type="range" id="hfov" min="30" max="360" step="5">
@@ -300,6 +311,20 @@ state.property = state.property && typeof state.property === 'object' ? state.pr
 state.plan = state.plan && state.plan.src ? state.plan : null;
 for (const r of state.rooms) { r.hotspots = r.hotspots || []; r.photos = r.photos || []; }
 const getRoom = id => state.rooms.find(r => r.id === id);
+// Una habitación puede tener varias panorámicas: las extra llevan «of» con el id de la principal.
+for (const r of state.rooms) {
+  let m = r.of && getRoom(r.of), n = 0;
+  while (m && m.of && m !== r && n++ < 50) m = getRoom(m.of);
+  if (m && m.of) m = null;
+  if (m && m !== r) r.of = m.id; else delete r.of;
+}
+const mainOf = r => (r && r.of && getRoom(r.of)) || r;
+const viewsOf = m => state.rooms.filter(r => r === m || r.of === m.id);
+const mainRooms = () => state.rooms.filter(r => !r.of);
+function fullName(r) {
+  const m = mainOf(r), g = viewsOf(m);
+  return g.length > 1 ? m.name + ' · ' + (g.indexOf(r) + 1) : m.name;
+}
 
 const caps = { artifact: null, assets: null, downloads: null };
 let canEdit = false, localOnly = false;
@@ -470,8 +495,8 @@ function renderHotspots() {
     el.className = 'hs' + (isInfo ? ' info' : '') + (mode === 'edit' && selHs === h.id ? ' sel' : '');
     el.innerHTML = '<span class="ring">' + (isInfo ? INFO_I : ARROW) + '</span><span class="lbl"></span>';
     const target = isInfo ? null : getRoom(h.to);
-    el.querySelector('.lbl').textContent = isInfo ? (h.title || 'Etiqueta') : (target ? target.name : 'Sin destino');
-    el.setAttribute('aria-label', isInfo ? 'Etiqueta: ' + (h.title || '') : (target ? 'Ir a ' + target.name : 'Punto sin destino'));
+    el.querySelector('.lbl').textContent = isInfo ? (h.title || 'Etiqueta') : (target ? fullName(target) : 'Sin destino');
+    el.setAttribute('aria-label', isInfo ? 'Etiqueta: ' + (h.title || '') : (target ? 'Ir a ' + fullName(target) : 'Punto sin destino'));
     el.addEventListener('click', e => {
       e.stopPropagation();
       if (placing || planPlacing) return;
@@ -672,14 +697,14 @@ function renderMinimap() {
     const b = document.createElement('button');
     b.className = 'mm-dot' + (r.id === curId ? ' cur' : '');
     b.style.left = (r.plan.x * 100) + '%'; b.style.top = (r.plan.y * 100) + '%';
-    b.title = r.name;
+    b.title = fullName(r);
     b.addEventListener('click', e => {
       e.stopPropagation();
       if (planPlacing) return;
       stopAuto();
       if (r.id !== curId) showRoom(r.id);
     });
-    const n = document.createElement('span'); n.className = 'mm-name'; n.textContent = r.name;
+    const n = document.createElement('span'); n.className = 'mm-name'; n.textContent = fullName(r);
     n.style.left = b.style.left; n.style.top = b.style.top;
     mmIn.append(b, n);
     if (r.id === curId) {
@@ -732,7 +757,7 @@ $('#gClose').addEventListener('click', closeGallery);
 { let sx = null; const w = $('#gImgWrap');
   w.addEventListener('pointerdown', e => { sx = e.clientX; });
   w.addEventListener('pointerup', e => { if (sx == null) return; const dx = e.clientX - sx; sx = null; if (Math.abs(dx) > 50) galStep(dx < 0 ? 1 : -1); }); }
-$('#btnPhotos').addEventListener('click', () => { const r = getRoom(curId); r && openGallery(r.photos); });
+$('#btnPhotos').addEventListener('click', () => { const r = getRoom(curId); r && openGallery(mainOf(r).photos); });
 
 /* ---------- chrome ---------- */
 function propHas() { const p = state.property || {}; return ['price', 'location', 'area', 'lot', 'bedrooms', 'bathrooms', 'parking', 'type', 'description', 'whatsapp', 'contact'].some(k => (p[k] || '').trim()); }
@@ -740,11 +765,22 @@ function updateChrome() {
   $('#title').textContent = state.title;
   const room = getRoom(curId);
   const empty = state.rooms.length === 0;
-  $('#roomLabel').textContent = room ? room.name : '';
+  const main = room && mainOf(room);
+  $('#roomLabel').textContent = main ? main.name : '';
   $('#roomLabel').hidden = !room;
-  const nph = room ? room.photos.length : 0;
+  const vs = $('#views'), group = main ? viewsOf(main) : [];
+  vs.innerHTML = ''; vs.hidden = group.length < 2;
+  if (group.length > 1) group.forEach((v, i) => {
+    const b = document.createElement('button');
+    b.textContent = i + 1; b.title = 'Vista ' + (i + 1) + ' de ' + group.length;
+    b.setAttribute('aria-label', b.title);
+    if (v.id === curId) { b.className = 'cur'; b.setAttribute('aria-current', 'true'); }
+    b.addEventListener('click', () => { stopAuto(); hideHint(); if (v.id !== curId) walkTo(v.id); });
+    vs.appendChild(b);
+  });
+  const nph = main ? main.photos.length : 0;
   $('#btnPhotos').hidden = !nph; $('#photoCount').textContent = nph;
-  $('#btnRooms').hidden = state.rooms.length < 2;
+  $('#btnRooms').hidden = mainRooms().length < 2;
   $('#btnDetails').hidden = !propHas();
   $('#btnEdit').hidden = !canEdit || mode === 'edit';
   $('#btnAuto').hidden = state.rooms.length === 0;
@@ -758,13 +794,14 @@ $('#btnRooms').addEventListener('click', e => {
   const m = $('#roomsMenu');
   if (!m.hidden) { m.hidden = true; return; }
   m.innerHTML = '';
-  for (const r of state.rooms) {
+  const curMain = mainOf(getRoom(curId));
+  for (const r of mainRooms()) {
     const b = document.createElement('button');
-    if (r.id === curId) b.className = 'cur';
+    if (r === curMain) b.className = 'cur';
     const im = document.createElement('img'); im.src = r.src; im.alt = '';
     const s = document.createElement('span'); s.textContent = r.name;
     b.append(im, s);
-    b.addEventListener('click', () => { m.hidden = true; stopAuto(); if (r.id !== curId) showRoom(r.id); });
+    b.addEventListener('click', () => { m.hidden = true; stopAuto(); if (r !== curMain) showRoom(r.id); });
     m.appendChild(b);
   }
   m.hidden = false;
@@ -781,7 +818,7 @@ $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') $('#mo
 $('#btnTips').addEventListener('click', () => modal(`
 <h3>Cómo tomar las panorámicas con el celular</h3>
 <ol>
-<li><b>Una foto por habitación</b>, desde el centro del cuarto, con el modo <b>Panorámica</b> de la cámara.</li>
+<li><b>Una foto por habitación</b>, desde el centro del cuarto, con el modo <b>Panorámica</b> de la cámara. Si la habitación es grande o tiene forma de L, toma <b>otra panorámica</b> desde otro punto y agrégala a la misma habitación.</li>
 <li><b>Gira el celular sobre sí mismo</b>, no tu cuerpo: imagina que el teléfono es el eje. Mantenlo a la altura del pecho y vertical.</li>
 <li>Muévete <b>despacio y parejo</b>, siguiendo la línea guía. Si tu celular lo permite, da la <b>vuelta completa</b> (360°).</li>
 <li>Asegúrate de que las <b>puertas</b> hacia otras habitaciones salgan en la foto: ahí pondrás los puntos para avanzar.</li>
@@ -857,13 +894,15 @@ function renderEditor() {
   const ti = $('#tourTitle'); if (document.activeElement !== ti) ti.value = state.title;
   const strip = $('#roomStrip'); strip.innerHTML = '';
   const startId = state.start && getRoom(state.start) ? state.start : state.rooms[0]?.id;
-  for (const r of state.rooms) {
-    const b = el('button', { className: 'rt' + (r.id === curId ? ' cur' : '') });
+  const curRoom = getRoom(curId), curMain = mainOf(curRoom), startMain = mainOf(getRoom(startId));
+  for (const r of mainRooms()) {
+    const b = el('button', { className: 'rt' + (r === curMain ? ' cur' : '') });
     const s = el('span');
-    if (r.id === startId) s.appendChild(el('b', { className: 'star', textContent: '★ ' }));
-    s.appendChild(document.createTextNode(r.name));
+    if (r === startMain) s.appendChild(el('b', { className: 'star', textContent: '★ ' }));
+    const nv = viewsOf(r).length;
+    s.appendChild(document.createTextNode(r.name + (nv > 1 ? ' (' + nv + ')' : '')));
     b.append(el('img', { src: r.src, alt: '' }), s);
-    b.addEventListener('click', () => { if (r.id !== curId) { selHs = null; setPlacing(null); showRoom(r.id); } });
+    b.addEventListener('click', () => { if (r !== curMain) { selHs = null; setPlacing(null); showRoom(r.id); } });
     strip.appendChild(b);
   }
   const add = el('label', { className: 'add' });
@@ -882,7 +921,24 @@ function renderEditor() {
   const room = getRoom(curId);
   $('#roomPanel').hidden = !room;
   if (!room) return;
-  const rn = $('#roomName'); if (document.activeElement !== rn) rn.value = room.name;
+  const rn = $('#roomName'); if (document.activeElement !== rn) rn.value = curMain.name;
+  const group = viewsOf(curMain), vi = group.indexOf(room);
+  const vstrip = $('#viewStrip'); vstrip.innerHTML = '';
+  group.forEach((v, i) => {
+    const b = el('button', { className: 'rt' + (v === room ? ' cur' : ''), title: 'Vista ' + (i + 1) });
+    b.append(el('img', { src: v.src, alt: '' }), el('span', { textContent: 'Vista ' + (i + 1) }));
+    b.addEventListener('click', () => { if (v !== room) { selHs = null; setPlacing(null); showRoom(v.id); } });
+    vstrip.appendChild(b);
+  });
+  const addV = el('label', { className: 'add' });
+  addV.innerHTML = '<span>＋ Otra<br>panorámica</span><input type="file" accept="image/*" multiple>';
+  addV.querySelector('input').addEventListener('change', onViewFiles);
+  vstrip.appendChild(addV);
+  $('#viewNote').textContent = group.length > 1
+    ? 'El visitante cambia de vista con los botones 1, 2… También puedes poner puntos de paso entre ellas.'
+    : 'Si la habitación es grande, agrega otra panorámica tomada desde otro punto.';
+  $('#viewRow').hidden = group.length < 2;
+  $('#viewTitle').textContent = 'Lo de abajo (ángulo, puntos, plano) es de la vista ' + (vi + 1) + '.';
   $('#hfov').value = room.hfov; $('#hfovVal').textContent = room.hfov + '°';
   $('#btnStartRoom').disabled = room.id === startId;
   $('#btnStartRoom').textContent = room.id === startId ? '★ El recorrido empieza aquí' : 'Empezar aquí';
@@ -915,7 +971,7 @@ function renderEditor() {
       nNav++;
       const sel = el('select');
       sel.appendChild(el('option', { value: '', textContent: 'Elegir destino…' }));
-      for (const r of state.rooms) if (r.id !== room.id) sel.appendChild(el('option', { value: r.id, textContent: r.name }));
+      for (const r of state.rooms) if (r.id !== room.id) sel.appendChild(el('option', { value: r.id, textContent: fullName(r) }));
       sel.value = h.to || '';
       sel.addEventListener('change', () => { h.to = sel.value || null; markDirty(); renderHotspots(); });
       row.append(el('span', { className: 'tag', textContent: 'PASO →' }), sel, go, del);
@@ -923,15 +979,16 @@ function renderEditor() {
     list.appendChild(row);
   }
   const pl = $('#phList'); pl.innerHTML = '';
-  if (!room.photos.length) pl.appendChild(el('div', { className: 'note', textContent: 'Fotos normales (baño, acabados, vista…). El visitante las ve con el botón de cámara.' }));
-  room.photos.forEach((p, i) => {
+  const phRoom = curMain;
+  if (!phRoom.photos.length) pl.appendChild(el('div', { className: 'note', textContent: 'Fotos normales (baño, acabados, vista…). El visitante las ve con el botón de cámara.' }));
+  phRoom.photos.forEach((p, i) => {
     const img = el('img', { src: p.src, alt: '' });
     img.style.cursor = 'pointer';
-    img.addEventListener('click', () => openGallery(room.photos, i));
+    img.addEventListener('click', () => openGallery(phRoom.photos, i));
     const cap = el('input', { className: 'field grow', value: p.caption || '', placeholder: 'Descripción (opcional)', maxLength: 80 });
     cap.addEventListener('input', () => { p.caption = cap.value; markDirty(); });
     const del = el('button', { className: 'x', title: 'Quitar foto', textContent: '✕' });
-    del.addEventListener('click', () => { room.photos = room.photos.filter(x => x !== p); markDirty(); updateChrome(); renderEditor(); });
+    del.addEventListener('click', () => { phRoom.photos = phRoom.photos.filter(x => x !== p); markDirty(); updateChrome(); renderEditor(); });
     pl.appendChild(el('div', { className: 'phRow' }, img, cap, del));
   });
 }
@@ -939,7 +996,9 @@ function renderEditor() {
 $('#tourTitle').addEventListener('input', e => { state.title = e.target.value.trim() || 'Recorrido virtual'; markDirty(); updateChrome(); });
 $('#roomName').addEventListener('input', e => {
   const room = getRoom(curId); if (!room) return;
-  room.name = e.target.value.trim() || 'Habitación'; markDirty(); updateChrome(); renderHotspots(); renderMinimap();
+  const name = e.target.value.trim() || 'Habitación';
+  for (const v of viewsOf(mainOf(room))) v.name = name;
+  markDirty(); updateChrome(); renderHotspots(); renderMinimap();
   clearTimeout(renderEditor._t); renderEditor._t = setTimeout(renderEditor, 400);
 });
 let hfovT;
@@ -973,24 +1032,44 @@ function armButton(btn, label, confirmLabel, fn) {
     t = 0; btn.textContent = label; fn();
   });
 }
-armButton($('#btnDelRoom'), 'Eliminar habitación', '¿Seguro? Toca otra vez', () => { const room = getRoom(curId); room && removeRooms(r => r.id === room.id); });
+armButton($('#btnDelRoom'), 'Eliminar habitación', '¿Seguro? Toca otra vez', () => {
+  const room = getRoom(curId); if (!room) return;
+  const m = mainOf(room); removeRooms(r => r === m || r.of === m.id);
+});
+armButton($('#btnDelView'), 'Quitar esta panorámica', '¿Seguro? Toca otra vez', () => {
+  const room = getRoom(curId); if (!room) return;
+  const m = mainOf(room), rest = viewsOf(m).filter(v => v !== room);
+  if (!rest.length) return;
+  const next = room === m ? rest[0] : m;
+  if (room === m) {
+    // La primera vista que queda pasa a ser la principal y hereda el nombre y las fotos de detalle.
+    delete next.of; next.name = m.name; next.photos = m.photos; if (m.demo) next.demo = true;
+    for (const v of rest) if (v !== next) v.of = next.id;
+  }
+  for (const r of state.rooms) {
+    for (const h of r.hotspots) if (h.to === room.id) h.to = next.id;
+    r.hotspots = r.hotspots.filter(h => h.type === 'info' || h.to !== r.id);
+  }
+  if (state.start === room.id) state.start = next.id;
+  removeRooms(r => r === room, next.id);
+});
 armButton($('#btnDemo'), 'Quitar ejemplo', '¿Quitar todo el ejemplo? Toca otra vez', () => {
-  removeRooms(r => r.demo);
+  removeRooms(r => r.demo || mainOf(r).demo);
   if (state.plan && state.plan.demo) state.plan = null;
   if (state.property.demo) state.property = {};
   if (state.title === 'Casa de ejemplo') state.title = 'Recorrido virtual';
   markDirty(); updateChrome(); renderMinimap(); renderEditor();
 });
 armButton($('#btnPlanDel'), 'Quitar imagen', '¿Quitar el plano? Toca otra vez', () => { state.plan = null; markDirty(); renderMinimap(); renderEditor(); });
-function removeRooms(pred) {
+function removeRooms(pred, nextId) {
   const gone = new Set(state.rooms.filter(pred).map(r => r.id));
   state.rooms = state.rooms.filter(r => !gone.has(r.id));
-  for (const r of state.rooms) r.hotspots = r.hotspots.filter(h => !gone.has(h.to));
+  for (const r of state.rooms) { r.hotspots = r.hotspots.filter(h => !gone.has(h.to)); if (gone.has(r.of)) delete r.of; }
   if (gone.has(state.start)) state.start = state.rooms[0]?.id || null;
   markDirty();
   if (gone.has(curId)) {
     curId = null; disposePano(); renderHotspots(); closeInfo();
-    if (state.rooms.length) showRoom(state.start || state.rooms[0].id); else { updateChrome(); renderEditor(); renderMinimap(); }
+    if (state.rooms.length) showRoom(getRoom(nextId) ? nextId : state.start || state.rooms[0].id); else { updateChrome(); renderEditor(); renderMinimap(); }
   } else { renderHotspots(); renderEditor(); renderMinimap(); }
 }
 
@@ -1042,7 +1121,7 @@ async function onFiles(e) {
   const files = [...(e.target.files || [])]; e.target.value = '';
   let first = null;
   const n = await withFiles(files, 'pano', (p, st) => {
-    const k = state.rooms.filter(r => !r.demo).length + 1;
+    const k = mainRooms().filter(r => !r.demo).length + 1;
     const room = { id: uid(), name: 'Habitación ' + k, src: st.src, assetId: st.assetId, w: p.w, h: p.h, hfov: estimateHfov(p.w / p.h), startYaw: 0, startPitch: 0, hotspots: [], photos: [] };
     state.rooms.push(room);
     if (!state.start || !getRoom(state.start)) state.start = room.id;
@@ -1051,10 +1130,25 @@ async function onFiles(e) {
   if (n) { toast('Fotos añadidas. Ponles nombre y conecta las puertas.', 3200); await showRoom(first.id); }
   updateChrome(); renderEditor();
 }
+async function onViewFiles(e) {
+  const files = [...(e.target.files || [])]; e.target.value = '';
+  const cur = getRoom(curId); if (!cur) return;
+  const m = mainOf(cur);
+  let first = null;
+  const n = await withFiles(files, 'pano', (p, st) => {
+    const v = { id: uid(), of: m.id, name: m.name, src: st.src, assetId: st.assetId, w: p.w, h: p.h, hfov: estimateHfov(p.w / p.h), startYaw: 0, startPitch: 0, hotspots: [], photos: [] };
+    // Se inserta junto a las otras vistas para que el recorrido automático las siga en orden.
+    const g = viewsOf(m), at = state.rooms.indexOf(g[g.length - 1]) + 1;
+    state.rooms.splice(at, 0, v);
+    first = first || v; markDirty();
+  });
+  if (n) { toast(n === 1 ? 'Panorámica añadida a «' + m.name + '»' : n + ' panorámicas añadidas a «' + m.name + '»', 3200); await showRoom(first.id); }
+  updateChrome(); renderEditor();
+}
 $('#emptyAdd input').addEventListener('change', async e => { if (mode !== 'edit') setMode('edit'); await onFiles(e); });
 $('#phIn').addEventListener('change', async e => {
   const files = [...(e.target.files || [])]; e.target.value = '';
-  const room = getRoom(curId); if (!room) return;
+  const room = mainOf(getRoom(curId)); if (!room) return;
   const n = await withFiles(files, 'photo', (p, st) => { room.photos.push({ id: uid(), src: st.src, assetId: st.assetId, caption: '' }); markDirty(); });
   if (n) toast(n === 1 ? 'Foto añadida' : n + ' fotos añadidas');
   updateChrome(); renderEditor();
