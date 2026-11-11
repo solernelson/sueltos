@@ -406,11 +406,33 @@ function buildPano(room, img) {
   }
   return { g, H, hf };
 }
+function disposeGroup(g) {
+  scene.remove(g);
+  g.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.map && o.material.map.dispose(); o.material.dispose(); } });
+}
 function disposePano() {
   if (!pano) return;
-  scene.remove(pano.g);
-  pano.g.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.map && o.material.map.dispose(); o.material.dispose(); } });
+  disposeGroup(pano.g);
   pano = null;
+}
+// Fundido cruzado: la panorámica anterior queda encima y se desvanece sobre la nueva.
+let xfade = null;
+function endXfade() { if (xfade) { disposeGroup(xfade.g); xfade = null; } }
+function startXfade(g, yawShift, dur) {
+  endXfade();
+  // Al reducirla un poco queda delante de la nueva; desde el centro se ve igual.
+  g.scale.setScalar(0.96);
+  // La giramos para que no salte cuando la cámara cambie de orientación.
+  g.rotation.y = -yawShift;
+  g.renderOrder = 1;
+  g.traverse(o => { if (o.isMesh) { o.material.transparent = true; o.material.depthWrite = false; o.renderOrder = 1; } });
+  xfade = { g, t0: performance.now(), dur };
+}
+function stepXfade(now) {
+  if (!xfade) return;
+  const k = clamp((now - xfade.t0) / xfade.dur, 0, 1), op = 1 - ease(k);
+  xfade.g.traverse(o => { if (o.isMesh) o.material.opacity = op; });
+  if (k >= 1) endXfade();
 }
 const imgCache = new Map();
 function loadImage(src) {
@@ -448,7 +470,8 @@ async function showRoom(id, opts = {}) {
   let img;
   try { img = await loadImage(room.src); } catch (e) { if (token === loadToken) { fade.classList.remove('on'); toast('No se pudo cargar la foto de «' + room.name + '»'); } return; }
   if (token !== loadToken) return;
-  disposePano();
+  const old = opts.dissolve && pano ? pano.g : null, oldYaw = view.yaw;
+  if (old) { pano = null; endXfade(); } else { endXfade(); disposePano(); }
   const b = buildPano(room, img);
   scene.add(b.g);
   pano = { ...b, room };
@@ -460,18 +483,41 @@ async function showRoom(id, opts = {}) {
   view.yaw = opts.yaw ?? room.startYaw ?? 0;
   view.pitch = opts.pitch ?? room.startPitch ?? 0;
   clampView();
+  if (old) startXfade(old, wrapA(view.yaw - oldYaw), opts.dissolve);
   if (gyro.on) gyro.needInit = true;
   renderHotspots(); updateChrome(); renderEditor(); renderMinimap();
   if (opts.arrive) { const target = view.fov; view.fov = target * 0.72; animateTo({ fov: target }, 650); }
   fade.classList.remove('on');
   auto.t = 0;
   for (const h of room.hotspots) { const r = getRoom(h.to); r && loadImage(r.src).catch(() => {}); }
+  for (const v of viewsOf(mainOf(room))) if (v !== room) loadImage(v.src).catch(() => {});
+}
+// Paso entre vistas de la misma habitación: avanza hacia la otra vista y funde una foto en la otra, sin negro.
+async function glideTo(cur, target, h) {
+  const cp = cur.plan, tp = target.plan;
+  const onPlan = cp && tp && (cp.x !== tp.x || cp.y !== tp.y);
+  let dir = h ? h.yaw : null;
+  if (dir == null && onPlan) {
+    const asp = state.plan ? (state.plan.w || 4) / (state.plan.h || 3) : 4 / 3;
+    dir = Math.atan2((tp.x - cp.x) * asp, -(tp.y - cp.y)) - rad(cur.planRot || 0);
+    if (lim.hf < TAU - 1e-3) dir = clamp(wrapA(dir), -lim.hf / 2, lim.hf / 2);
+  }
+  const imgP = loadImage(target.src).catch(() => null);
+  const fov0 = view.fov;
+  await animateTo({ yaw: dir ?? view.yaw, pitch: dir == null ? view.pitch : view.pitch * 0.5, fov: Math.max(24, fov0 * 0.72) }, 480);
+  await imgP;
+  // Si las dos vistas están en el plano, se sigue mirando hacia el mismo lado de la habitación.
+  const yaw = cp && tp ? view.yaw + rad(cur.planRot || 0) - rad(target.planRot || 0) : null;
+  await showRoom(target.id, { noFade: true, keepFov: true, dissolve: 650, yaw: yaw ?? undefined, pitch: view.pitch });
+  animateTo({ fov: Math.min(fov0, baseFov()) }, 650);
 }
 let walking = false;
 async function walkTo(targetId, h) {
   const target = getRoom(targetId); if (!target || walking) return;
   walking = true;
   try {
+    const cur = getRoom(curId);
+    if (cur && pano && mainOf(cur) === mainOf(target)) { await glideTo(cur, target, h); return; }
     if (h) {
       const p = animateTo({ yaw: h.yaw, pitch: clamp(h.pitch * 0.5, -0.3, 0.3), fov: Math.max(22, view.fov * 0.5) }, 520);
       setTimeout(() => fade.classList.add('on'), 300);
@@ -1232,7 +1278,7 @@ window.addEventListener('beforeunload', e => { if (dirty && mode === 'edit') { e
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  stepAnim(now);
+  stepAnim(now); stepXfade(now);
   if (gyro.on && gyro.got && !anim) { view.yaw = gyro.yaw + gyro.offset; view.pitch = gyro.pitch; clampView(); }
   stepAuto(dt);
   camera.fov = view.fov; camera.updateProjectionMatrix();
