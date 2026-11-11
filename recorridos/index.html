@@ -51,6 +51,12 @@ button{cursor:pointer}
 .viewStrip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
 .viewStrip .rt,.viewStrip .add{width:92px}
 .viewStrip .add{min-height:64px}
+.partRow{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:4px 10px;align-items:center;background:#0f1012;border:1px solid var(--line);border-radius:10px;padding:8px}
+.partRow img{width:64px;height:44px;object-fit:cover;border-radius:6px;grid-row:span 2}
+.partRow .sl{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mute)}
+.partRow .sl span{min-width:58px}
+.partRow .sl b{min-width:38px;text-align:right;color:var(--text);font-weight:600}
+.partRow .btns{grid-row:span 2;display:flex;flex-direction:column}
 #hint{position:absolute;left:50%;top:44%;transform:translateX(-50%);z-index:2;font-size:13px;color:#eee;background:rgba(15,16,18,.6);padding:6px 12px;border-radius:999px;transition:opacity .5s;white-space:nowrap;pointer-events:none}
 #hint.gone{opacity:0}
 #placeBanner{position:absolute;left:50%;top:66px;transform:translateX(-50%);z-index:6;background:var(--accent);color:var(--accent-ink);font-weight:650;padding:8px 14px;border-radius:999px;font-size:14px;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
@@ -210,7 +216,7 @@ details.box .sec{margin-top:10px}
     </div>
     <div id="roomPanel" class="sec" hidden>
       <input class="field" id="roomName" placeholder="Nombre de la habitación" maxlength="40">
-      <div class="lab" style="margin-top:4px">Panorámicas de esta habitación</div>
+      <div class="lab" style="margin-top:4px">Vistas desde otros puntos</div>
       <div class="viewStrip" id="viewStrip"></div>
       <div class="note" id="viewNote"></div>
       <div class="row" id="viewRow" hidden><span class="note grow" id="viewTitle"></span><button class="btn danger" id="btnDelView">Quitar esta panorámica</button></div>
@@ -219,6 +225,10 @@ details.box .sec{margin-top:10px}
         <input type="range" id="hfov" min="30" max="360" step="5">
         <div class="note">Si diste la vuelta completa, ponlo en 360°. Si la foto se ve estirada o aplastada, ajústalo hasta que las paredes se vean rectas.</div>
       </div>
+      <div class="lab" style="margin-top:4px">Completar la vuelta</div>
+      <div class="note" id="partNote"></div>
+      <div class="phList" id="partList"></div>
+      <div class="row"><label class="btn fileBtn">+ Foto desde el mismo punto<input type="file" accept="image/*" multiple id="partIn"></label></div>
       <div class="row">
         <button class="btn" id="btnStartView">Usar esta vista al entrar</button>
         <button class="btn" id="btnStartRoom">Empezar aquí</button>
@@ -309,7 +319,7 @@ state.title = state.title || 'Recorrido virtual';
 state.rooms = Array.isArray(state.rooms) ? state.rooms : [];
 state.property = state.property && typeof state.property === 'object' ? state.property : {};
 state.plan = state.plan && state.plan.src ? state.plan : null;
-for (const r of state.rooms) { r.hotspots = r.hotspots || []; r.photos = r.photos || []; }
+for (const r of state.rooms) { r.hotspots = r.hotspots || []; r.photos = r.photos || []; r.parts = Array.isArray(r.parts) ? r.parts : []; }
 const getRoom = id => state.rooms.find(r => r.id === id);
 // Una habitación puede tener varias panorámicas: las extra llevan «of» con el id de la principal.
 for (const r of state.rooms) {
@@ -341,7 +351,8 @@ camera.rotation.order = 'YXZ';
 const MAXTEX = Math.min(4096, renderer.capabilities.maxTextureSize || 4096);
 const R = 10;
 const view = { yaw: 0, pitch: 0, fov: 70 };
-const lim = { hf: TAU, halfV: 0.6, maxFov: 70 };
+// hf: ancho que cubren las fotos; c: dirección del centro de ese ancho.
+const lim = { hf: TAU, c: 0, halfV: 0.6, maxFov: 70 };
 let pano = null, loadToken = 0;
 
 function baseFov() { return camera.aspect < 1 ? lim.maxFov : Math.min(70, lim.maxFov); }
@@ -362,19 +373,19 @@ function clampView() {
   if (lim.hf < TAU - 1e-3) {
     const hh = Math.atan(Math.tan(vf) * camera.aspect);
     const ymax = Math.max(0, lim.hf / 2 - hh);
-    const before = view.yaw;
-    view.yaw = clamp(view.yaw, -ymax, ymax);
-    return before !== view.yaw;
+    const off = wrapA(view.yaw - lim.c), off2 = clamp(off, -ymax, ymax);
+    view.yaw = lim.c + off2;
+    return off2 !== off;
   }
   view.yaw = wrapA(view.yaw);
   return false;
 }
 
-function arcGeom(u0, u1, hf, H) {
+function arcGeom(u0, u1, hf, H, c = 0) {
   const seg = Math.max(2, Math.ceil((u1 - u0) * hf / rad(2)));
   const pos = [], uv = [], idx = [];
   for (let i = 0; i <= seg; i++) {
-    const u = u0 + (u1 - u0) * i / seg, yaw = -hf / 2 + u * hf;
+    const u = u0 + (u1 - u0) * i / seg, yaw = c - hf / 2 + u * hf;
     const x = R * Math.sin(yaw), z = -R * Math.cos(yaw), lu = i / seg;
     pos.push(x, -H / 2, z, x, H / 2, z);
     uv.push(lu, 0, lu, 1);
@@ -386,25 +397,66 @@ function arcGeom(u0, u1, hf, H) {
   g.setIndex(idx);
   return g;
 }
-function buildPano(room, img) {
-  const g = new THREE.Group();
+// Una foto colocada en el cilindro. idx > 0: foto extra para completar la vuelta,
+// con los bordes difuminados y un poco por delante para que tape la unión.
+function addPiece(g, img, hfDeg, c, idx) {
   const w = img.naturalWidth, h = img.naturalHeight, aspect = w / h;
-  const hf = rad(clamp(room.hfov || 360, 10, 360));
+  const hf = rad(clamp(hfDeg || 360, 10, 360));
   const H = R * hf / aspect;
   const scale = h > MAXTEX ? MAXTEX / h : 1;
   const srcStrip = Math.floor(MAXTEX / scale);
   const aniso = renderer.capabilities.getMaxAnisotropy();
+  const fw = Math.max(2, Math.round(w * 0.05)) / w;
   for (let sx = 0; sx < w; sx += srcStrip) {
     const sw = Math.min(srcStrip, w - sx);
     const cv = document.createElement('canvas');
     cv.width = Math.max(1, Math.round(sw * scale)); cv.height = Math.max(1, Math.round(h * scale));
-    cv.getContext('2d').drawImage(img, sx, 0, sw, h, 0, 0, cv.width, cv.height);
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, sx, 0, sw, h, 0, 0, cv.width, cv.height);
+    if (idx > 0) {
+      const gr = ctx.createLinearGradient(-sx * scale, 0, (w - sx) * scale, 0);
+      gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(fw, '#000'); gr.addColorStop(1 - fw, '#000'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalCompositeOperation = 'destination-in'; ctx.fillStyle = gr; ctx.fillRect(0, 0, cv.width, cv.height);
+    }
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = aniso;
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-    g.add(new THREE.Mesh(arcGeom(sx / w, (sx + sw) / w, hf, H), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })));
+    const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+    if (idx > 0) { mat.transparent = true; mat.depthWrite = false; }
+    const mesh = new THREE.Mesh(arcGeom(sx / w, (sx + sw) / w, hf, H, c), mat);
+    if (idx > 0) { mesh.scale.setScalar(1 - 0.003 * idx); mesh.renderOrder = idx * 0.01; }
+    g.add(mesh);
   }
-  return { g, H, hf };
+  return H;
+}
+function buildPano(room, img, partImgs = []) {
+  const g = new THREE.Group();
+  let H = addPiece(g, img, room.hfov, 0, 0);
+  (room.parts || []).forEach((p, i) => {
+    if (partImgs[i]) H = Math.min(H, addPiece(g, partImgs[i], p.hfov, rad(p.at || 0), i + 1));
+  });
+  return { g, H, ...coverage(room) };
+}
+// Qué parte de la vuelta cubren las fotos: el tramo continuo más grande (el hueco más grande queda fuera).
+function coverage(room) {
+  const arcs = [[0, room.hfov || 360], ...(room.parts || []).map(p => [p.at || 0, p.hfov || 0])];
+  if (arcs.some(a => a[1] >= 359.5)) return { hf: TAU, c: 0 };
+  const iv = [];
+  for (const [c, w] of arcs) {
+    const s = ((c - w / 2) % 360 + 360) % 360, e = s + w;
+    if (e > 360) iv.push([s, 360], [0, e - 360]); else iv.push([s, e]);
+  }
+  iv.sort((a, b) => a[0] - b[0]);
+  const m = [];
+  for (const v of iv) { const L = m[m.length - 1]; if (L && v[0] <= L[1] + 0.5) L[1] = Math.max(L[1], v[1]); else m.push([...v]); }
+  let best = null;
+  for (let i = 0; i < m.length; i++) {
+    const gs = m[i][1], ge = i + 1 < m.length ? m[i + 1][0] : m[0][0] + 360;
+    if (ge - gs > 0.5 && (!best || ge - gs > best.len)) best = { gs, len: ge - gs };
+  }
+  if (!best) return { hf: TAU, c: 0 };
+  const span = 360 - best.len;
+  return { hf: rad(span), c: wrapA(rad(best.gs + best.len + span / 2)) };
 }
 function disposeGroup(g) {
   scene.remove(g);
@@ -469,15 +521,12 @@ async function showRoom(id, opts = {}) {
   if (doFade) { fade.classList.add('on'); await sleep(280); }
   let img;
   try { img = await loadImage(room.src); } catch (e) { if (token === loadToken) { fade.classList.remove('on'); toast('No se pudo cargar la foto de «' + room.name + '»'); } return; }
+  const partImgs = await loadParts(room);
   if (token !== loadToken) return;
   const old = opts.dissolve && pano ? pano.g : null, oldYaw = view.yaw;
   if (old) { pano = null; endXfade(); } else { endXfade(); disposePano(); }
-  const b = buildPano(room, img);
-  scene.add(b.g);
-  pano = { ...b, room };
+  applyPano(room, img, partImgs);
   curId = id;
-  lim.hf = b.hf; lim.halfV = Math.atan(b.H / 2 / R);
-  lim.maxFov = Math.min(90, deg(2 * lim.halfV) * 0.999);
   anim = null;
   if (!opts.keepFov) view.fov = baseFov();
   view.yaw = opts.yaw ?? room.startYaw ?? 0;
@@ -492,6 +541,23 @@ async function showRoom(id, opts = {}) {
   for (const h of room.hotspots) { const r = getRoom(h.to); r && loadImage(r.src).catch(() => {}); }
   for (const v of viewsOf(mainOf(room))) if (v !== room) loadImage(v.src).catch(() => {});
 }
+function loadParts(room) { return Promise.all((room.parts || []).map(p => loadImage(p.src).catch(() => null))); }
+function applyPano(room, img, partImgs) {
+  const b = buildPano(room, img, partImgs);
+  scene.add(b.g);
+  pano = { ...b, room };
+  lim.hf = b.hf; lim.c = b.c; lim.halfV = Math.atan(b.H / 2 / R);
+  lim.maxFov = Math.min(90, deg(2 * lim.halfV) * 0.999);
+}
+// Rehace la panorámica actual sin mover la vista (para los controles del editor).
+async function refreshPano() {
+  const room = getRoom(curId); if (!room || !pano) return;
+  const token = ++loadToken;
+  let img; try { img = await loadImage(room.src); } catch (e) { return; }
+  const partImgs = await loadParts(room);
+  if (token !== loadToken) return;
+  endXfade(); disposePano(); applyPano(room, img, partImgs); clampView();
+}
 // Paso entre vistas de la misma habitación: avanza hacia la otra vista y funde una foto en la otra, sin negro.
 async function glideTo(cur, target, h) {
   const cp = cur.plan, tp = target.plan;
@@ -500,7 +566,7 @@ async function glideTo(cur, target, h) {
   if (dir == null && onPlan) {
     const asp = state.plan ? (state.plan.w || 4) / (state.plan.h || 3) : 4 / 3;
     dir = Math.atan2((tp.x - cp.x) * asp, -(tp.y - cp.y)) - rad(cur.planRot || 0);
-    if (lim.hf < TAU - 1e-3) dir = clamp(wrapA(dir), -lim.hf / 2, lim.hf / 2);
+    if (lim.hf < TAU - 1e-3) dir = lim.c + clamp(wrapA(dir - lim.c), -lim.hf / 2, lim.hf / 2);
   }
   const imgP = loadImage(target.src).catch(() => null);
   const fov0 = view.fov;
@@ -707,7 +773,7 @@ function placeHotspot(cx, cy) {
   raycaster.setFromCamera(new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
   const d = raycaster.ray.direction;
   const yaw = Math.atan2(d.x, -d.z), pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
-  if (lim.hf < TAU - 1e-3 && Math.abs(yaw) > lim.hf / 2) { toast('Ese punto queda fuera de la foto'); return; }
+  if (lim.hf < TAU - 1e-3 && Math.abs(wrapA(yaw - lim.c)) > lim.hf / 2) { toast('Ese punto queda fuera de la foto'); return; }
   let h;
   if (placing === 'info') {
     h = { id: uid(), type: 'info', yaw: +yaw.toFixed(4), pitch: +pitch.toFixed(4), title: 'Nueva etiqueta', text: '' };
@@ -865,6 +931,7 @@ $('#btnTips').addEventListener('click', () => modal(`
 <h3>Cómo tomar las panorámicas con el celular</h3>
 <ol>
 <li><b>Una foto por habitación</b>, desde el centro del cuarto, con el modo <b>Panorámica</b> de la cámara. Si la habitación es grande o tiene forma de L, toma <b>otra panorámica</b> desde otro punto y agrégala a la misma habitación.</li>
+<li>Si tu celular no da la vuelta completa, toma más fotos <b>sin moverte del mismo punto</b>, girando hacia lo que faltó, y agrégalas en <b>Completar la vuelta</b>. Que cada foto se encime un poco con la anterior.</li>
 <li><b>Gira el celular sobre sí mismo</b>, no tu cuerpo: imagina que el teléfono es el eje. Mantenlo a la altura del pecho y vertical.</li>
 <li>Muévete <b>despacio y parejo</b>, siguiendo la línea guía. Si tu celular lo permite, da la <b>vuelta completa</b> (360°).</li>
 <li>Asegúrate de que las <b>puertas</b> hacia otras habitaciones salgan en la foto: ahí pondrás los puntos para avanzar.</li>
@@ -977,15 +1044,16 @@ function renderEditor() {
     vstrip.appendChild(b);
   });
   const addV = el('label', { className: 'add' });
-  addV.innerHTML = '<span>＋ Otra<br>panorámica</span><input type="file" accept="image/*" multiple>';
+  addV.innerHTML = '<span>＋ Otro<br>punto</span><input type="file" accept="image/*" multiple>';
   addV.querySelector('input').addEventListener('change', onViewFiles);
   vstrip.appendChild(addV);
   $('#viewNote').textContent = group.length > 1
     ? 'El visitante cambia de vista con los botones 1, 2… También puedes poner puntos de paso entre ellas.'
-    : 'Si la habitación es grande, agrega otra panorámica tomada desde otro punto.';
+    : 'Si la habitación es grande, agrega una panorámica tomada desde otro lugar de la habitación.';
   $('#viewRow').hidden = group.length < 2;
   $('#viewTitle').textContent = 'Lo de abajo (ángulo, puntos, plano) es de la vista ' + (vi + 1) + '.';
   $('#hfov').value = room.hfov; $('#hfovVal').textContent = room.hfov + '°';
+  renderParts(room);
   $('#btnStartRoom').disabled = room.id === startId;
   $('#btnStartRoom').textContent = room.id === startId ? '★ El recorrido empieza aquí' : 'Empezar aquí';
   $('#btnPlanPlace').textContent = room.plan ? 'Mover en el plano' : 'Ubicar en el plano';
@@ -1039,6 +1107,60 @@ function renderEditor() {
   });
 }
 
+/* ---------- completar la vuelta ---------- */
+let partT;
+function partsChanged() { markDirty(); updatePartNote(getRoom(curId)); clearTimeout(partT); partT = setTimeout(refreshPano, 80); }
+function updatePartNote(room) {
+  if (!room) return;
+  const cov = coverage(room), miss = Math.round(360 - deg(cov.hf));
+  $('#partNote').textContent = !room.parts.length
+    ? (room.hfov >= 360 ? 'Esta panorámica ya da la vuelta completa.' : '¿La panorámica no da la vuelta completa? Agrega fotos tomadas desde el mismo punto y alinéalas con la foto principal.')
+    : miss <= 0 ? '✓ Vuelta completa: se puede girar sin frenarse.'
+    : 'Faltan ' + miss + '° para completar la vuelta. Mira hacia la unión y mueve «Posición» hasta que coincida.';
+}
+function lookAtSeam(p) { stopAuto(); animateTo({ yaw: rad(p.at - p.hfov / 2 + 3) }, 450); }
+function renderParts(room) {
+  room.parts = room.parts || [];
+  const list = $('#partList'); list.innerHTML = '';
+  room.parts.forEach((p, i) => {
+    const slider = (label, min, max, key) => {
+      const r = el('input', { type: 'range', min, max, step: 1, value: p[key] });
+      r.setAttribute('aria-label', label + ' de la foto ' + (i + 2));
+      const v = el('b', { textContent: p[key] + '°' });
+      r.addEventListener('input', () => { p[key] = +r.value; v.textContent = p[key] + '°'; partsChanged(); });
+      return el('label', { className: 'sl' }, el('span', { textContent: label }), r, v);
+    };
+    const img = el('img', { src: p.src, alt: 'Foto ' + (i + 2) });
+    const go = el('button', { className: 'x', title: 'Mirar la unión', textContent: '◎' });
+    go.setAttribute('aria-label', 'Mirar la unión de la foto ' + (i + 2));
+    go.addEventListener('click', () => lookAtSeam(p));
+    const del = el('button', { className: 'x', title: 'Quitar foto', textContent: '✕' });
+    del.setAttribute('aria-label', 'Quitar la foto ' + (i + 2));
+    del.addEventListener('click', () => { room.parts = room.parts.filter(x => x !== p); partsChanged(); renderEditor(); });
+    list.appendChild(el('div', { className: 'partRow' }, img, slider('Posición', -180, 180, 'at'), el('div', { className: 'btns' }, go, del), slider('Ángulo', 10, 360, 'hfov')));
+  });
+  updatePartNote(room);
+}
+$('#partIn').addEventListener('change', async e => {
+  const files = [...(e.target.files || [])]; e.target.value = '';
+  const room = getRoom(curId); if (!room) return;
+  room.parts = room.parts || [];
+  let last = null;
+  const n = await withFiles(files, 'pano', (p, st) => {
+    const hf = estimateHfov(p.w / p.h), cov = coverage(room);
+    // Se pone justo a la derecha de lo que ya hay, encimando un poco.
+    const end = cov.hf >= TAU - 1e-3 ? (room.hfov || 360) / 2 : deg(cov.c + cov.hf / 2);
+    const at = Math.round(deg(wrapA(rad(end - 5 + hf / 2))));
+    last = { id: uid(), src: st.src, assetId: st.assetId, w: p.w, h: p.h, hfov: hf, at };
+    room.parts.push(last); markDirty();
+  });
+  if (n) {
+    await refreshPano(); renderEditor();
+    lookAtSeam(last);
+    toast(n === 1 ? 'Foto añadida. Mueve «Posición» hasta que la unión coincida.' : n + ' fotos añadidas. Alinéalas con «Posición».', 4000);
+  }
+});
+
 $('#tourTitle').addEventListener('input', e => { state.title = e.target.value.trim() || 'Recorrido virtual'; markDirty(); updateChrome(); });
 $('#roomName').addEventListener('input', e => {
   const room = getRoom(curId); if (!room) return;
@@ -1051,8 +1173,9 @@ let hfovT;
 $('#hfov').addEventListener('input', e => {
   const room = getRoom(curId); if (!room) return;
   room.hfov = +e.target.value; $('#hfovVal').textContent = room.hfov + '°'; markDirty();
+  updatePartNote(room);
   clearTimeout(hfovT);
-  hfovT = setTimeout(() => showRoom(room.id, { noFade: true, yaw: view.yaw, pitch: view.pitch, keepFov: true }), 120);
+  hfovT = setTimeout(refreshPano, 120);
 });
 $('#planRot').addEventListener('input', e => {
   const room = getRoom(curId); if (!room) return;
@@ -1254,6 +1377,7 @@ $('#btnDownload').addEventListener('click', async () => {
       // Las marcas "demo" se conservan para que «Quitar ejemplo» siga funcionando al editar con #editar.
       delete r.assetId; r.src = await inlineSrc(r.src);
       for (const p of r.photos) { delete p.assetId; p.src = await inlineSrc(p.src); }
+      for (const p of r.parts || []) { delete p.assetId; p.src = await inlineSrc(p.src); }
     }
     if (data.plan) { delete data.plan.assetId; data.plan.src = await inlineSrc(data.plan.src); }
     const name = (state.title || 'recorrido').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'recorrido';

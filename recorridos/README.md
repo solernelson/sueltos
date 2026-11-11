@@ -16,7 +16,8 @@ Recorridos virtuales de casas hechos con fotos panorámicas del celular. Cada re
 2. Toca **Añadir panorámicas** y elige tus fotos, una por habitación (luego puedes sumar más a cada una).
 3. En cada habitación:
    - Ponle nombre y ajusta el **Ángulo** hasta que las paredes se vean rectas (360° si diste la vuelta completa).
-   - **+ Otra panorámica**: si la habitación es grande o tiene forma de L, agrega más panorámicas tomadas desde otros puntos. El visitante cambia entre ellas con los botones **1, 2…** junto al nombre de la habitación. Cada vista tiene su propio ángulo, puntos de paso y lugar en el plano; las fotos de detalle son de toda la habitación.
+   - **Completar la vuelta**: si la panorámica no da los 360°, agrega fotos tomadas desde el mismo punto con **+ Foto desde el mismo punto**. Cada una se coloca a continuación de lo que ya hay; mira hacia la unión (◎) y mueve **Posición** y **Ángulo** hasta que coincida. Cuando las fotos cubren toda la vuelta, el visitante gira sin frenarse.
+   - **Vistas desde otros puntos** (**＋ Otro punto**): si la habitación es grande o tiene forma de L, agrega panorámicas tomadas desde otros lugares de la habitación. El visitante cambia entre ellas con los botones **1, 2…** junto al nombre de la habitación. Cada vista tiene su propio ángulo, puntos de paso y lugar en el plano; las fotos de detalle son de toda la habitación.
    - **+ Punto de paso**: toca una puerta y elige a qué habitación lleva.
    - **+ Etiqueta**: toca algo de la foto y escribe una explicación.
    - **Fotos de detalle**: agrega fotos normales del baño, los acabados, la vista…
